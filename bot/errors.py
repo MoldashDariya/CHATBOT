@@ -14,6 +14,21 @@ class BlockedURLError(InvalidURLError):
     """The URL is well-formed but must not be fetched (non-public address, forbidden port)."""
 
 
+class UnsupportedFormatError(BotError):
+    """The source is something the bot cannot read (image, archive, channel page...)."""
+
+    def __init__(self, reason: str = "other") -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class LegacyOfficeFormatError(UnsupportedFormatError):
+    """Old binary Office file (.doc and friends): the user should send PDF or DOCX instead."""
+
+    def __init__(self) -> None:
+        super().__init__("legacy_office")
+
+
 class HostNotFoundError(BotError):
     """DNS resolution failed."""
 

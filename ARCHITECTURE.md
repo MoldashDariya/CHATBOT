@@ -31,6 +31,20 @@ Telegram AI-бот. Пользователь отправляет ссылку �
 4. **HTML**: всё остальное. Дальше LLM-классификатор по очищенному тексту:
    `university_page | scholarship | news_article | publication | general_site | other`.
 
+Два разных понятия, не путать: **формат** (`SourceFormat`: youtube/pdf/docx/html, определяет
+`pipeline/detector.py`, нужен экстракторам) и **класс** (`Summary.source_type`: university_page,
+scholarship... определяется позже по тексту HTML-страницы).
+
+Правила детектора:
+- `detect_from_url`: только то, что не требует скачивания: видео YouTube (нужен 11-символьный id;
+  канал/плейлист/поиск отклоняются) и старый `.doc` (отказ до скачивания).
+- Итог решают **байты ответа** (`detect_from_content`), а не расширение URL и не `Content-Type`:
+  `%PDF-` в начале (допускается мусор в первом КиБ, только если сервер сам сказал `application/pdf`),
+  zip с `word/document.xml` = DOCX, OLE-сигнатура = старый Office (отказ), иначе HTML по
+  Content-Type или по разметке в начале. Остальное (картинки, JSON, xlsx, архивы) = не поддерживается.
+- Ссылка на `.pdf`, вернувшая HTML (страница ошибки/логина), обрабатывается как HTML.
+- После скачивания смотреть **итоговый** URL (после редиректов): `detect_response`.
+
 Класс источника влияет на промпт извлечения (у стипендии акцент на eligibility/сумму,
 у университета на программы и стоимость, у новости на дату публикации и первоисточник).
 
@@ -76,7 +90,7 @@ tests/
 ```
 
 ### Ключевой контракт
-`Extractor.extract(source) -> ExtractedContent(text, title, source_url, source_type, meta)`.
+`Extractor.extract(source) -> ExtractedContent(text, title, source_url, source_format, meta)`.
 Все extractors возвращают единый формат. Оркестратор не знает деталей формата.
 
 ### Схема результата (pydantic, `schema.py`)

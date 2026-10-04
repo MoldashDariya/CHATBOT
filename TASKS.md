@@ -27,8 +27,8 @@
 - [x] 1.8 `limits.py`: rate limit на пользователя
 
 ### 1C. Определение типа
-- [ ] 1.9 `detector.py`: YouTube / PDF / DOCX / HTML по URL + Content-Type + magic bytes
-- [ ] 1.10 Тесты детектора (в т.ч. PDF без расширения, редирект на файл)
+- [x] 1.9 `detector.py`: YouTube / PDF / DOCX / HTML по URL + Content-Type + magic bytes
+- [x] 1.10 Тесты детектора (в т.ч. PDF без расширения, редирект на файл)
 
 ### 1D. Извлечение
 - [ ] 1.11 `extractors/html.py` (httpx + trafilatura, метаданные: title, дата, canonical URL)
