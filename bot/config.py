@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     max_concurrent_jobs: int = Field(default=4, gt=0)  # requests processed at the same time
     # Linked pages read when the user's page has no deadline backed by its text (0 turns it off).
     follow_linked_pages: int = Field(default=2, ge=0, le=5)
-    cache_ttl_hours: int = Field(default=24, ge=0)
+    cache_ttl_hours: int = Field(default=24, ge=0)  # 0 turns the answer cache off
+    cache_db_path: str = Field(default="data/cache.sqlite3", min_length=1)
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 

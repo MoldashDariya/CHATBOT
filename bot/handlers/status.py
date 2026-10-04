@@ -4,7 +4,7 @@ import re
 
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardMarkup, Message
 
 logger = logging.getLogger(__name__)
 
@@ -46,27 +46,39 @@ class StatusMessage:
             return
         self._last_text = text
 
-    async def finish(self, cards: list[str]) -> None:
+    async def finish(
+        self, cards: list[str], reply_markup: InlineKeyboardMarkup | None = None
+    ) -> None:
         """Show the answer: the first card replaces the status message, the rest follow as new
-        messages. Cards are HTML; if Telegram will not parse one it goes out as plain text."""
-        first, *rest = cards
-        await self._deliver(first, replace_status=True)
-        for card in rest:
-            await self._deliver(card, replace_status=False)
+        messages. Cards are HTML; if Telegram will not parse one it goes out as plain text.
+        `reply_markup` (buttons) goes under the last message only."""
+        *head, last = cards
+        for position, card in enumerate(head):
+            await self._deliver(card, replace_status=position == 0)
+        await self._deliver(last, replace_status=not head, reply_markup=reply_markup)
 
-    async def _deliver(self, markup: str, *, replace_status: bool) -> None:
+    async def _deliver(
+        self,
+        markup: str,
+        *,
+        replace_status: bool,
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
         attempts: list[tuple[bool, str | None]] = []  # (edit the status message?, parse mode)
         for edit in (True, False) if replace_status and self._sent is not None else (False,):
             attempts += [(edit, ParseMode.HTML), (edit, None)]
-
         last_error: TelegramBadRequest | None = None
         for edit, parse_mode in attempts:
             body = markup if parse_mode else to_plain_text(markup)
             try:
                 if edit and self._sent is not None:
-                    await self._sent.edit_text(body, parse_mode=parse_mode)
+                    await self._sent.edit_text(
+                        body, parse_mode=parse_mode, reply_markup=reply_markup
+                    )
                 else:
-                    await self._origin.answer(body, parse_mode=parse_mode)
+                    await self._origin.answer(
+                        body, parse_mode=parse_mode, reply_markup=reply_markup
+                    )
                 return
             except TelegramBadRequest as exc:
                 last_error = exc

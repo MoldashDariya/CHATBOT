@@ -107,6 +107,7 @@ class Summary(BaseModel):
     pages_read: int | None = None  # PDF: partial coverage when pages_read < pages_total
     pages_total: int | None = None
     extra_sources: list[str] = []  # linked pages that were read in addition to the source
+    cached_minutes_ago: int | None = None  # set when the answer comes from the cache
 
     @property
     def partial_coverage(self) -> bool:

@@ -47,7 +47,20 @@ class FakePipeline:
         self.stages = stages
         self.calls: list[tuple[str, str]] = []
 
-    async def run(self, url: str, *, language: str, on_stage: Any = None) -> Any:
+    # The answer cache is not under test here (see test_cache_flow.py): by default nothing is
+    # stored and no button is offered.
+    stored: Any = None
+    button_id: str | None = None
+
+    async def cached_summary(self, url: str, language: str) -> Any:
+        return self.stored
+
+    async def refresh_button_id(self, url: str, language: str) -> str | None:
+        return self.button_id
+
+    async def run(
+        self, url: str, *, language: str, on_stage: Any = None, refresh: bool = False
+    ) -> Any:
         self.calls.append((url, language))
         for stage in self.stages:
             if on_stage:
@@ -363,7 +376,9 @@ async def test_finish_without_a_prior_status_message_just_sends() -> None:
     message = make_message("x")
     await StatusMessage(message).finish(["<b>card</b>"])
 
-    message.answer.assert_awaited_once_with("<b>card</b>", parse_mode=ParseMode.HTML)
+    message.answer.assert_awaited_once_with(
+        "<b>card</b>", parse_mode=ParseMode.HTML, reply_markup=None
+    )
 
 
 # --- wiring -------------------------------------------------------------------------------
@@ -374,7 +389,7 @@ def test_dispatcher_routes_commands_before_the_catch_all_and_carries_the_shared_
 
     dp = build_dispatcher(limiter, pipeline, settings)  # type: ignore[arg-type]
 
-    assert [router.name for router in dp.sub_routers] == ["start", "link", "document"]
+    assert [router.name for router in dp.sub_routers] == ["start", "link", "document", "refresh"]
     assert dp.workflow_data["rate_limiter"] is limiter
     assert dp.workflow_data["pipeline"] is pipeline
     assert dp.workflow_data["settings"] is settings

@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from bot.config import Settings, get_settings
-from bot.handlers import document, link, start
+from bot.handlers import document, link, refresh, start
 from bot.log import setup_logging
 from bot.pipeline.orchestrator import Orchestrator
 from bot.security.limits import RateLimiter
@@ -22,6 +22,7 @@ def build_dispatcher(
     dp.include_router(start.router)
     dp.include_router(link.router)
     dp.include_router(document.router)
+    dp.include_router(refresh.router)
     return dp
 
 

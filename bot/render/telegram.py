@@ -137,6 +137,9 @@ def render_summary(summary: Summary) -> list[str]:
     if notes:
         blocks.append([f"⚠️ <b>{_esc(text(lang, 'notes'))}</b>", *notes])
     blocks.append([_confidence_line(summary, lang)])
+    if summary.cached_minutes_ago is not None:
+        age = _age(lang, summary.cached_minutes_ago)
+        blocks.append([f"<i>{_esc(text(lang, 'cached_note', age=age))}</i>"])
     if summary.extra_sources:
         blocks.append(_extra_sources(summary, lang))
     blocks.append([_source_line(summary, lang)])  # always last
@@ -226,6 +229,17 @@ def _confidence_line(summary: Summary, lang: str) -> str:
     emoji = _CONFIDENCE_EMOJI[summary.confidence]
     label = text(lang, f"confidence_{summary.confidence.value}")
     return f"{emoji} {_esc(text(lang, 'confidence'))}: {_esc(label)}"
+
+
+def _age(lang: str, minutes: int) -> str:
+    """How long ago, in the unit a person would use."""
+    if minutes < 1:
+        return text(lang, "cached_age_now")
+    if minutes < 60:
+        return text(lang, "cached_age_minutes", n=minutes)
+    if minutes < 48 * 60:
+        return text(lang, "cached_age_hours", n=minutes // 60)
+    return text(lang, "cached_age_days", n=minutes // (24 * 60))
 
 
 def _extra_sources(summary: Summary, lang: str) -> list[str]:

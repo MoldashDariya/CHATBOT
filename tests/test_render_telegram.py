@@ -9,6 +9,7 @@ from bot.render.telegram import (
     MAX_WARNING,
     SAFE_LIMIT,
     TELEGRAM_LIMIT,
+    _age,
     _esc,
     _pack,
     _snippet,
@@ -599,3 +600,44 @@ def test_the_domain_next_to_a_link_cannot_be_auto_linked_by_telegram() -> None:
 
     assert "— <code>example.edu</code>" in markup  # plain text would become a second link
     assert markup_problems(markup) == []
+
+
+# --- a saved answer says how old it is ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("minutes", "expected"),
+    [
+        (0, "только что"),
+        (1, "1 мин назад"),
+        (59, "59 мин назад"),
+        (60, "1 ч назад"),
+        (125, "2 ч назад"),
+        (47 * 60 + 59, "47 ч назад"),
+        (48 * 60, "2 дн. назад"),
+        (5 * 24 * 60 + 30, "5 дн. назад"),
+    ],
+)
+def test_the_age_is_shown_in_the_unit_a_person_would_use(minutes: int, expected: str) -> None:
+    assert _age("ru", minutes) == expected
+
+
+@pytest.mark.parametrize(
+    ("lang", "now", "hours"),
+    [("en", "just now", "3 h ago"), ("kk", "дәл қазір", "3 сағ бұрын")],
+)
+def test_the_age_is_localized(lang: str, now: str, hours: str) -> None:
+    assert (_age(lang, 0), _age(lang, 180)) == (now, hours)
+
+
+def test_a_saved_answer_is_marked_just_before_the_source() -> None:
+    shown = lines(card(cached_minutes_ago=125))
+
+    note = next(i for i, line in enumerate(shown) if line.startswith("🕒"))
+    assert "2 ч назад" in shown[note] and "🔄 Обновить" in shown[note]
+    assert shown[note + 2].startswith("🔎")  # a blank line, then the source: still last
+    assert shown[-1].startswith("🔎")
+
+
+def test_a_freshly_read_answer_has_no_saved_marker() -> None:
+    assert "🕒" not in card()

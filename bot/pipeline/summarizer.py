@@ -10,6 +10,8 @@ Design notes (see ARCHITECTURE.md, "Работа с LLM"):
   are neutralised, and the system prompt tells the model not to obey it.
 """
 
+import hashlib
+import json
 import logging
 import re
 import time
@@ -83,6 +85,11 @@ class Summarizer:
         }
         if effort:
             self._output_config["effort"] = effort
+        # Identifies everything that shapes an answer (model, effort, schema, prompt): a stored
+        # answer made under another fingerprint is not served.
+        settings_json = json.dumps(self._output_config, sort_keys=True)
+        material = f"{model}\n{settings_json}\n{self._system}"
+        self.fingerprint = hashlib.sha256(material.encode()).hexdigest()[:16]
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "Summarizer":

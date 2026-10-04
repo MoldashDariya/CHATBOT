@@ -87,6 +87,8 @@ def build(
     messages: FakeMessages | None = None,
     max_file_bytes: int = 15 * 1024 * 1024,
     follow_pages: int = 0,
+    model: str = "test-model",
+    **options: Any,
 ) -> tuple[Orchestrator, FakeClient]:
     client = FakeClient(*outcomes)
     if messages is not None:
@@ -100,7 +102,7 @@ def build(
     }
     summarizer = Summarizer(
         client,  # type: ignore[arg-type]
-        model="test-model",
+        model=model,
         effort="medium",
         today=lambda: TODAY,
     )
@@ -113,6 +115,7 @@ def build(
         timeout_s=timeout_s,
         max_file_bytes=max_file_bytes,
         follow_pages=follow_pages,
+        **{"today": lambda: TODAY, **options},
     )
     return pipeline, client
 

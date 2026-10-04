@@ -37,6 +37,50 @@ def youtube_video_id(url: str) -> str | None:
     return candidate if _YOUTUBE_ID_RE.fullmatch(candidate) else None
 
 
+_TRACKING_PARAMS = frozenset(
+    {"fbclid", "gclid", "dclid", "msclkid", "yclid", "mc_cid", "mc_eid", "igshid", "_ga", "_gl"}
+)
+
+
+def cache_key(url: str) -> str | None:
+    """What identifies the page behind `url` for the answer cache, or None if it cannot be keyed.
+
+    Links that differ only in tracking parameters (`utm_*`, `fbclid`...), a `#fragment`, the case
+    of the host or a default port are the same page. A YouTube video is its 11-character id,
+    whichever way it was linked (`youtu.be/ID`, `watch?v=ID&t=30s`). Nothing else is merged: a
+    different path, the `www.` prefix, `http` and `https`, or a different query stay different
+    pages, because merging pages that are not the same would serve the wrong summary.
+    """
+    try:
+        parts = urlsplit(url.strip())
+        host = (parts.hostname or "").lower().rstrip(".")
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https") or not host or parts.username or parts.password:
+        return None  # not ours to key: the pipeline refuses such links itself
+
+    video = youtube_video_id(url)
+    if video:
+        return f"youtube:{video}"
+
+    shown_host = f"[{host}]" if ":" in host else host
+    default_port = 443 if scheme == "https" else 80
+    netloc = shown_host if port in (None, default_port) else f"{shown_host}:{port}"
+    query = "&".join(
+        pair
+        for pair in parts.query.split("&")
+        if pair and not _is_tracking_parameter(pair.split("=", 1)[0])
+    )
+    return f"{scheme}://{netloc}{parts.path or '/'}" + (f"?{query}" if query else "")
+
+
+def _is_tracking_parameter(name: str) -> bool:
+    name = name.lower()
+    return name.startswith("utm_") or name in _TRACKING_PARAMS
+
+
 def extract_urls(text: str) -> list[str]:
     """Return unique URLs found in `text`, in order of appearance."""
     seen: set[str] = set()
