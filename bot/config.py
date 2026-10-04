@@ -1,14 +1,23 @@
+import re
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_TELEGRAM_TOKEN_RE = re.compile(r"\d{6,12}:[A-Za-z0-9_-]{30,40}")
 
 
 class Settings(BaseSettings):
     """Application settings, read from environment / `.env`."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        # Without this, validation errors echo (parts of) the raw input, i.e. our secrets.
+        hide_input_in_errors=True,
+    )
 
     telegram_bot_token: SecretStr
     anthropic_api_key: SecretStr
@@ -24,6 +33,19 @@ class Settings(BaseSettings):
     cache_ttl_hours: int = Field(default=24, ge=0)
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+    @field_validator("telegram_bot_token")
+    @classmethod
+    def _check_telegram_token(cls, value: SecretStr) -> SecretStr:
+        token = value.get_secret_value()
+        if not token.isascii():
+            raise ValueError(
+                "TELEGRAM_BOT_TOKEN contains non-ASCII characters "
+                "(typed with a non-Latin keyboard layout while pasting?)"
+            )
+        if not _TELEGRAM_TOKEN_RE.fullmatch(token):
+            raise ValueError("TELEGRAM_BOT_TOKEN must look like '<digits>:<35 characters>'")
+        return value
 
 
 @lru_cache
