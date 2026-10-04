@@ -10,6 +10,7 @@ from bot.render.telegram import (
     TELEGRAM_LIMIT,
     _esc,
     _pack,
+    _snippet,
     render_summary,
     visible_length,
 )
@@ -62,6 +63,43 @@ def test_deadlines_show_label_date_as_written_and_a_short_quote() -> None:
 
     assert "• Early round: 1 November 2026\n  «Early round · 1 November 2026»" in text
     assert "• Обычный раунд: 15 January 2027" in text
+
+
+LONG_QUOTE = (
+    "Application deadline for the winter semester · Early deadline: Nov 15 (positive decision: "
+    "notification at the lastest in February of the following year) Late deadline: May 15 "
+    "(positive decision: notification at the lastest in July)"
+)
+
+
+@pytest.mark.parametrize("anchor", ["Nov 15", "May 15"])
+def test_a_long_quote_is_cut_around_the_date_it_supports(anchor: str) -> None:
+    shown = _snippet(LONG_QUOTE, anchor, 140)
+
+    assert anchor in shown
+    assert len(shown) <= 140
+    assert shown.strip("…") in LONG_QUOTE  # nothing reworded, only cut
+
+
+def test_a_cut_quote_starts_and_ends_at_words_and_marks_the_cuts() -> None:
+    shown = _snippet(LONG_QUOTE, "Nov 15", 140)
+
+    assert shown.startswith("…") and shown.endswith("…")  # cut on both sides
+    assert not _snippet(LONG_QUOTE, "May 15", 140).endswith("…")  # reaches the end: no mark
+    assert not shown[1].isspace() and not shown[-2].isspace()
+    assert shown[1:-1].split(" ")[0] in LONG_QUOTE.split(" ")  # first piece is a whole word
+
+
+def test_a_short_quote_is_left_alone_and_a_missing_date_clips_the_head() -> None:
+    assert _snippet("Deadline | 1 May", "1 May", 140) == "Deadline | 1 May"
+    head = _snippet(LONG_QUOTE, "not in the quote", 140)
+    assert head.startswith("Application deadline") and head.endswith("…") and len(head) <= 140
+
+
+def test_the_card_shows_the_late_date_in_its_quote() -> None:
+    deadline = make_deadline(label="Late", date_text="May 15", quote=LONG_QUOTE)
+
+    assert "May 15" in plain(card(deadlines=[deadline])).split("«", 1)[1]
 
 
 def test_costs_show_item_and_amount_as_written() -> None:

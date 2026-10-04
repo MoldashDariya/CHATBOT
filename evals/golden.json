@@ -216,6 +216,20 @@
           "January 15"
         ]
       }
+    },
+    {
+      "id": "live-saarland-data-science-early-late",
+      "source": {
+        "url": "https://www.uni-saarland.de/en/study/programmes/master/data-science.html"
+      },
+      "language": "ru",
+      "expected": {
+        "source_type": "university_page",
+        "deadlines": [
+          "Nov 15",
+          "May 15"
+        ]
+      }
     }
   ]
 }

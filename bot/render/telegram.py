@@ -59,6 +59,33 @@ def _clip(value: str, limit: int) -> str:
     return cut.rstrip(" ,;:-") + "…"
 
 
+def _snippet(value: str, anchor: str, limit: int) -> str:
+    """At most `limit` characters of `value` that contain `anchor` (the date a quote supports),
+    cut at words, with "…" marking what was left out. A quote about a late deadline must not be
+    shown cut off just before the late date. Without the anchor this is a plain head clip."""
+    value = " ".join(value.split())
+    if len(value) <= limit:
+        return value
+    anchor = " ".join(anchor.split())
+    index = value.lower().find(anchor.lower()) if anchor else -1
+    if index == -1 or len(anchor) >= limit - 2:
+        return _clip(value, limit)
+
+    room = limit - 2  # two characters for the ellipses
+    start = max(0, min(index - room // 4, len(value) - room))
+    end = start + room
+    if start > 0:  # begin at a word
+        space = value.find(" ", start)
+        if 0 <= space < index:
+            start = space + 1
+    if end < len(value):  # end at a word
+        space = value.rfind(" ", index + len(anchor), end)
+        if space > index:
+            end = space
+    cut = value[start:end].strip()
+    return f"{'…' if start > 0 else ''}{cut}{'…' if end < len(value) else ''}"
+
+
 def _is_web_url(url: str) -> bool:
     return urlsplit(url.strip()).scheme in ("http", "https")
 
@@ -149,7 +176,9 @@ def _deadline(deadline: Deadline) -> str:
     label = _esc(_clip(deadline.label, MAX_LABEL))
     when = _esc(_clip(deadline.date_text, MAX_LABEL))
     line = f"{_BULLET} {label}: <b>{when}</b>{marks}"
-    quote = _clip(deadline.quote.strip().strip("|").replace(" | ", " · "), MAX_QUOTE)
+    quote = _snippet(
+        deadline.quote.strip().strip("|").replace(" | ", " · "), deadline.date_text, MAX_QUOTE
+    )
     return f"{line}\n  <i>«{_esc(quote)}»</i>" if quote else line
 
 
