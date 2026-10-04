@@ -63,7 +63,7 @@ bot/
     status.py            # статус-сообщение, редактируемое по этапам
     document.py          # обработка присланных PDF/DOCX
   pipeline/
-    orchestrator.py      # detect → fetch → extract → clean → summarize → render
+    orchestrator.py      # detect → fetch → extract → clean → summarize; этапы, лимит параллельных задач, общий таймаут
     detector.py          # определение типа источника
     cleaner.py           # чистка текста, дедупликация, обрезка по токенам
     summarizer.py        # вызов Claude, structured output, повтор, сборка Summary
@@ -71,7 +71,8 @@ bot/
     verify.py            # сверка цитат/дат/ссылок с текстом, вырезание URL из warnings
   extractors/
     base.py              # интерфейс Extractor -> ExtractedContent
-    html.py              # httpx + trafilatura; fallback: playwright
+    html.py              # trafilatura + подготовка ссылок; fallback: main_area, затем playwright (2.3)
+    main_area.py         # текст основной области страницы прямо из DOM (для страниц из ссылок)
     pdf.py               # pdfplumber/pypdf
     docx.py              # python-docx
     youtube.py           # youtube-transcript-api / yt-dlp
@@ -87,6 +88,10 @@ bot/
     cache.py             # SQLite: кэш по нормализованному URL + хэшу контента
   prompts/
     system.md            # единый системный промпт (правила, классы источников, язык)
+evaluation.py            # оценка качества на golden-наборе: python -m bot.evaluation
+evals/
+  golden.json            # эталонные случаи: вход + ожидаемые факты
+  fixtures/              # сохранённые входы (PDF, DOCX, HTML)
 tests/
   fixtures/              # сохранённые HTML/PDF/DOCX и транскрипты
 ```
@@ -115,8 +120,13 @@ source_url, source_format, links, meta)` (`extractors/base.py`). Все extracto
   http и т.п.), ссылки внутри страницы (`#frag`, сноски) разворачиваются в текст, голые `&` в
   разметке экранируются, а после извлечения URL с параметрами вроде `&section=`/`&region=`
   восстанавливаются (иначе `html.unescape` в trafilatura превращает их в `§ion=`/`®ion=`).
-  Известное ограничение: абзацы, состоящие почти из одних ссылок (списки «Полезные ссылки»),
-  trafilatura считает навигацией и отбрасывает; оценить потери на golden-наборе (1.32).
+  trafilatura считает блоки почти из одних ссылок навигацией и отбрасывает их, а на страницах
+  вроде руководства по финансированию или хаба приёма это и есть содержимое (на GOV.UK терялось
+  58 из 60 пунктов списков). Поэтому, если страница объявляет основную область (`<main>`,
+  `role=main`, `<article>`), `extractors/main_area.py` читает её прямо из DOM (порядок, заголовки,
+  пункты списков, таблицы, ссылки; без nav/header/footer/aside/форм/скрытого/cookie-виджетов), и
+  этот текст берётся, когда он больше текста trafilatura в 1.5 раза (`meta.text_source=main_area`).
+  Обычные статьи остаются на trafilatura.
   Таблицы как `| a | b |`, ссылки как `[текст](url)`; если вышло <500 знаков,
   второй проход с `favor_recall`. Короткий результат НЕ ошибка здесь: решение «слишком мало
   текста» принимает cleaner (1.17). JS-страницы (DAAD, Stanford дали 300-700 знаков) закроет
@@ -318,6 +328,7 @@ MAX_CHARS=120000
 MAX_PDF_PAGES=80
 REQUEST_TIMEOUT_S=20
 RATE_LIMIT_PER_HOUR=10
+MAX_CONCURRENT_JOBS=4
 CACHE_TTL_HOURS=24
 LOG_LEVEL=INFO
 ```
@@ -329,6 +340,8 @@ uv run python -m bot.main    # запуск бота
 uv run pytest                # тесты
 uv run ruff check . && uv run ruff format --check .
 uv run mypy bot
+uv run python -m bot.evaluation   # качество на golden-наборе (тратит токены API)
+uv run pytest -m live -s        # тесты на настоящем API
 docker build -t admissions-bot . && docker run --env-file .env admissions-bot
 ```
 
@@ -337,8 +350,18 @@ docker build -t admissions-bot . && docker run --env-file .env admissions-bot
 - Extractors тестируются на сохранённых фикстурах (`tests/fixtures`), без сети (respx).
 - Тест пайплайна с замоканным LLM. Отдельный необязательный e2e-набор с реальным API
   (маркер `@pytest.mark.live`), не запускается по умолчанию.
-- Golden-набор: 8–10 реальных страниц (университет, стипендия, новость, PDF, DOCX, YouTube),
-  для каждой ожидаемые дедлайны. Метрика: точность дедлайнов, отсутствие выдуманных полей.
+- **Golden-набор** (`evals/golden.json`, запуск `uv run python -m bot.evaluation [--only ID] [--json]`).
+  Случай это сохранённый вход (файл) или живой URL плюс ожидаемые факты: класс источника, даты
+  дедлайнов (ISO, или текст для дат без года), подстроки в стоимости, ссылки, запрещённый текст
+  (проверяется везде, кроме `warnings`), либо ожидаемая ошибка. Метрики: полнота дедлайнов,
+  **дедлайны без подтверждения текстом** (мера выдумок, не зависит от того, что перечислено в
+  файле), запрещённый текст. Код возврата не 0, если полнота < 90% или есть неподтверждённые.
+  Сейчас в наборе 8 сохранённых случаев (HTML на двух языках, PDF, DOCX, страница из ссылок,
+  инъекция, JS-оболочка с ожидаемой ошибкой). Реальные страницы добавляются записью с
+  `"source": {"url": "..."}` без `file`; ожидания к ним нужно проверить по самой странице,
+  а срок годности у них короткий (даты уходят в прошлое).
+- Инструмент измерения сам покрыт тестами (`tests/test_evaluation.py`): мутация метрики должна
+  ронять тест.
 
 ## Definition of Done для задачи
 Код + тесты проходят, `ruff` и `mypy` без ошибок, обновлён `TASKS.md`, нет новых секретов в коде,

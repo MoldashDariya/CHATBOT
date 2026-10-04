@@ -27,6 +27,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy bot
 uv run pre-commit install                       # хуки перед коммитом
 uv run pytest -m live -s                        # тесты на настоящем API (тратят немного токенов)
+uv run python -m bot.evaluation                  # качество на эталонном наборе (тратит токены)
 ```
 
 Дополнительные зависимости (по необходимости):
@@ -35,5 +36,3 @@ uv run pytest -m live -s                        # тесты на настоящ
 uv sync --extra browser            # Playwright для JS-страниц
 uv sync --extra youtube-fallback   # yt-dlp как запасной вариант для субтитров
 ```
-
-> `python -m bot.main` появится в задаче 1.1; пока в проекте только каркас.

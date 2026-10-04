@@ -11,12 +11,18 @@ from trafilatura.utils import load_html
 
 from bot.errors import ExtractionError
 from bot.extractors.base import ExtractedContent, RawSource, clean_meta, find_urls
+from bot.extractors.main_area import main_area_text
 from bot.pipeline.detector import SourceFormat
 
 logger = logging.getLogger(__name__)
 
 # Below this, a second pass with a more permissive extraction is tried before giving up.
 _THIN_TEXT_CHARS = 500
+
+# The page's own main area replaces trafilatura's text when it is this much fuller: trafilatura
+# discards blocks that are mostly links, which on a funding guide or admissions hub is content.
+_MAIN_AREA_FACTOR = 1.5
+_MAIN_AREA_MIN_CHARS = 200
 
 # An ampersand that does not start a complete entity ("&name;" / "&#123;"). libxml2 decodes
 # legacy entities even without the semicolon, so "?a=1&section=2&region=EU" would come out as
@@ -51,6 +57,7 @@ class HtmlExtractor:
             document = tree if tree is not None else body
 
             text = restore_urls(self._main_text(document, source.url), known_urls)
+            text, used_main_area = _prefer_fuller_main_area(text, tree)
             metadata = trafilatura.extract_metadata(_fresh(document), default_url=source.url)
         except Exception as exc:
             logger.warning("HTML extraction failed: %s", type(exc).__name__, exc_info=True)
@@ -65,6 +72,7 @@ class HtmlExtractor:
             # Taken from the cleaned text, so navigation and footer links never get in.
             links=find_urls(text),
             meta=clean_meta(
+                text_source="main_area" if used_main_area else None,
                 # Trafilatura returns the page's declared canonical URL, else the one we gave it.
                 canonical_url=canonical,
                 published=metadata.date if metadata else None,
@@ -95,6 +103,23 @@ class HtmlExtractor:
             # Pages with unusual layouts: accept more candidate blocks, keep the longer result.
             text = max(text, run(favor_recall=True), key=len)
         return text
+
+
+def _prefer_fuller_main_area(text: str, tree: HtmlElement | None) -> tuple[str, bool]:
+    """(text, whether the main-area text was used). Never fails: this is a fallback."""
+    if tree is None:
+        return text, False
+    try:
+        alternative = main_area_text(tree)
+    except Exception:
+        logger.warning("Main-area extraction failed", exc_info=True)
+        return text, False
+    if len(alternative) >= _MAIN_AREA_MIN_CHARS and len(alternative) > _MAIN_AREA_FACTOR * len(
+        text
+    ):
+        logger.info("Using main-area text: %d chars instead of %d", len(alternative), len(text))
+        return alternative, True
+    return text, False
 
 
 def _fresh(document: HtmlElement | bytes) -> HtmlElement | bytes:

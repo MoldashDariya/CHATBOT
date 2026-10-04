@@ -27,3 +27,6 @@ data/
 .DS_Store
 .idea/
 .vscode/
+
+# Evaluation output
+evals/results/

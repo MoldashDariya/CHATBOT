@@ -68,6 +68,10 @@ class LLMError(BotError):
         self.reason = reason
 
 
+class ProcessingTimeoutError(BotError):
+    """The whole request (queue, download, reading, analysis) exceeded its time budget."""
+
+
 class HostNotFoundError(BotError):
     """DNS resolution failed."""
 

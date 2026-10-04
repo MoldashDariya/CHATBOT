@@ -1,6 +1,5 @@
-"""User-facing texts. Russian is the default interface language (see ARCHITECTURE.md)."""
-
-import math
+"""Texts of /start and /help. Still Russian only: choosing a language comes with /lang (task 2.4).
+Everything else the user sees is localized in `render/texts.py`."""
 
 START = (
     "👋 Привет! Пришли мне ссылку на страницу университета, стипендии, новость, "
@@ -23,15 +22,3 @@ HELP = (
     "• сканы PDF без текстового слоя пока не читаю\n\n"
     "В конце ответа всегда будет ссылка на источник, а даты стоит перепроверить там."
 )
-
-NO_URL = "Не нашёл ссылку в сообщении. Пришли адрес, начинающийся с http:// или https://."
-MULTIPLE_URLS = "Нашёл несколько ссылок, обработаю первую. Остальные пришли отдельными сообщениями."
-STATUS_READING = "⏳ Читаю страницу…"
-
-
-def rate_limited(retry_after_s: float) -> str:
-    minutes = max(1, math.ceil(retry_after_s / 60))
-    return f"Слишком много запросов за последний час. Попробуй снова через {minutes} мин."
-
-
-NOT_READY = "Анализ ссылок ещё не подключён: эта часть бота в разработке."

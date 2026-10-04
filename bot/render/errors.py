@@ -18,6 +18,7 @@ from bot.errors import (
     HostNotFoundError,
     InvalidURLError,
     LLMError,
+    ProcessingTimeoutError,
     TooLittleTextError,
     TooManyRedirectsError,
     UnsupportedFormatError,
@@ -84,6 +85,8 @@ def _classify(exc: BaseException, max_download_mb: int) -> tuple[str, dict[str, 
             return _http_key(code), {"code": code}
         case FetchTimeoutError():
             return "err_timeout", {}
+        case ProcessingTimeoutError():
+            return "err_processing_timeout", {}
         case FetchFailedError():
             return "err_connect", {}
         case TooManyRedirectsError():

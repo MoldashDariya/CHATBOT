@@ -35,8 +35,8 @@ One entry per distinct deadline or date that matters for applying (application r
 # What kind of source is it (`source_type`)
 
 Pick one; it tells you what to look for.
-- `university_page`: a university, faculty or programme page. Look for programmes, admission rounds and deadlines, entrance exams and score thresholds, language requirements, tuition and fees, required documents.
-- `scholarship`: a scholarship, grant or funding programme. Look for the funder, amount and coverage, eligibility (citizenship, age, level, grades), application stages and deadlines, selection criteria, obligations such as returning home, required documents.
+- `university_page`: a page of a university, college, faculty or study programme (not of a government or funding body). Look for programmes, admission rounds and deadlines, entrance exams and score thresholds, language requirements, tuition and fees, required documents.
+- `scholarship`: a scholarship, grant, student loan or other funding programme, or an official guide to student funding. Look for the funder, amount and coverage, eligibility (citizenship, age, level, grades), application stages and deadlines, selection criteria, obligations such as returning home, required documents.
 - `news_article`: a news item or blog post. Look for what is announced, its publication date, the deadlines or changes mentioned, and which official source it names. Be careful with second-hand facts.
 - `publication`: a guide, regulation, report, paper or other document. Look for the admission rules, procedures, effective dates and the sections that concern applicants.
 - `general_site`: another kind of website that has some admission-related content.

@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     max_pdf_pages: int = Field(default=80, gt=0)
     request_timeout_s: float = Field(default=20, gt=0)
     rate_limit_per_hour: int = Field(default=10, gt=0)
+    max_concurrent_jobs: int = Field(default=4, gt=0)  # requests processed at the same time
     cache_ttl_hours: int = Field(default=24, ge=0)
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
