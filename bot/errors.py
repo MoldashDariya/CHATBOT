@@ -42,6 +42,17 @@ class ExtractionError(BotError):
         self.reason = reason
 
 
+class TooLittleTextError(BotError):
+    """Too little text was extracted to summarise it (JavaScript-rendered page, login or
+    paywall, nearly empty file). The LLM is not called in this case."""
+
+    def __init__(self, source_format: str, chars: int, minimum: int) -> None:
+        super().__init__(f"{source_format}: {chars} chars, need {minimum}")
+        self.source_format = source_format
+        self.chars = chars
+        self.minimum = minimum
+
+
 class HostNotFoundError(BotError):
     """DNS resolution failed."""
 

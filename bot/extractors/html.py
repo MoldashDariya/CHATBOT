@@ -1,7 +1,13 @@
 import asyncio
+import copy
+import html
 import logging
+import re
+from urllib.parse import urldefrag, urljoin, urlsplit
 
 import trafilatura
+from lxml.html import HtmlElement
+from trafilatura.utils import load_html
 
 from bot.errors import ExtractionError
 from bot.extractors.base import ExtractedContent, RawSource, clean_meta, find_urls
@@ -12,32 +18,52 @@ logger = logging.getLogger(__name__)
 # Below this, a second pass with a more permissive extraction is tried before giving up.
 _THIN_TEXT_CHARS = 500
 
+# An ampersand that does not start a complete entity ("&name;" / "&#123;"). libxml2 decodes
+# legacy entities even without the semicolon, so "?a=1&section=2&region=EU" would come out as
+# "?a=1§ion=2®ion=EU". Browsers do not do that.
+_BARE_AMPERSAND_RE = re.compile(rb"&(?![A-Za-z0-9#]{1,32};)")
+_UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
+
+_WEB_SCHEMES = ("http", "https")
+_NON_WEB_PREFIXES = ("javascript:", "mailto:", "tel:", "data:", "sms:")
+
 
 class HtmlExtractor:
     """Main-content extraction with trafilatura: menus, cookie banners, ads and footers are
-    dropped; headings, lists, tables (as `| a | b |` rows) and in-content links are kept."""
+    dropped; headings, lists, tables (as `| a | b |` rows) and in-content links are kept.
+
+    Links are fixed up around trafilatura, which on its own resolves relative links against
+    the site root instead of the page, ignores `<base>`, downgrades `//host/x` to http and
+    mangles query strings through `html.unescape`. So the DOM is prepared first (links made
+    absolute, same-page anchors unwrapped) and mangled URLs are repaired afterwards.
+    """
 
     async def extract(self, source: RawSource) -> ExtractedContent:
         return await asyncio.to_thread(self._extract, source)
 
     def _extract(self, source: RawSource) -> ExtractedContent:
+        body = escape_bare_ampersands(source.body)
         try:
-            text = self._main_text(source)
-            metadata = trafilatura.extract_metadata(source.body, default_url=source.url)
+            tree = load_html(body)
+            known_urls: set[str] = set()
+            if tree is not None:
+                known_urls = prepare_links(tree, source.url)
+            document = tree if tree is not None else body
+
+            text = restore_urls(self._main_text(document, source.url), known_urls)
+            metadata = trafilatura.extract_metadata(_fresh(document), default_url=source.url)
         except Exception as exc:
             logger.warning("HTML extraction failed: %s", type(exc).__name__, exc_info=True)
             raise ExtractionError("corrupt") from exc
 
-        # Links come from the cleaned text (trafilatura writes them as `[label](url)`), so
-        # navigation and footer links never get in.
-        links = find_urls(text)
         canonical = metadata.url if metadata and metadata.url != source.url else None
         return ExtractedContent(
             text=text,
             title=(metadata.title.strip() if metadata and metadata.title else None) or None,
             source_url=source.url,
             source_format=SourceFormat.HTML,
-            links=links,
+            # Taken from the cleaned text, so navigation and footer links never get in.
+            links=find_urls(text),
             meta=clean_meta(
                 # Trafilatura returns the page's declared canonical URL, else the one we gave it.
                 canonical_url=canonical,
@@ -49,12 +75,12 @@ class HtmlExtractor:
         )
 
     @staticmethod
-    def _main_text(source: RawSource) -> str:
+    def _main_text(document: HtmlElement | bytes, url: str) -> str:
         def run(*, favor_recall: bool) -> str:
             return (
                 trafilatura.extract(
-                    source.body,
-                    url=source.url,
+                    _fresh(document),  # trafilatura edits the tree it is given
+                    url=url,
                     include_links=True,
                     include_tables=True,
                     include_comments=False,
@@ -69,3 +95,64 @@ class HtmlExtractor:
             # Pages with unusual layouts: accept more candidate blocks, keep the longer result.
             text = max(text, run(favor_recall=True), key=len)
         return text
+
+
+def _fresh(document: HtmlElement | bytes) -> HtmlElement | bytes:
+    return copy.deepcopy(document) if isinstance(document, HtmlElement) else document
+
+
+def escape_bare_ampersands(body: bytes) -> bytes:
+    """Protect URLs and text from libxml2's lenient entity decoding (see _BARE_AMPERSAND_RE).
+
+    Works on bytes so the page's encoding is irrelevant for every ASCII-compatible one; the
+    rare UTF-16 page is left alone rather than corrupted.
+    """
+    if body.startswith(_UTF16_BOMS):
+        return body
+    return _BARE_AMPERSAND_RE.sub(b"&amp;", body)
+
+
+def prepare_links(tree: HtmlElement, page_url: str) -> set[str]:
+    """Make every web link absolute (honouring `<base href>`) and unwrap same-page anchors.
+
+    Returns the absolute URLs present on the page (link targets and URLs typed into the
+    text), which `restore_urls` uses to repair them after extraction.
+    """
+    base = _document_base(tree, page_url)
+    page = urldefrag(page_url)[0]
+    urls: set[str] = set(find_urls(tree.text_content()))
+
+    for anchor in list(tree.iter("a")):  # the loop edits the tree, so iterate over a copy
+        href = (anchor.get("href") or "").strip()
+        if not href or href.lower().startswith(_NON_WEB_PREFIXES):
+            continue
+        absolute = urljoin(base, href)
+        if urlsplit(absolute).scheme not in _WEB_SCHEMES:
+            continue
+        if href.startswith("#") or (urldefrag(absolute)[0] == page and "#" in absolute):
+            # A jump within this page is not a link worth keeping. Dropping the tag (not just
+            # the href) keeps trafilatura from wrapping the label in stray brackets.
+            anchor.drop_tag()
+            continue
+        anchor.set("href", absolute)
+        urls.add(absolute)
+    return urls
+
+
+def _document_base(tree: HtmlElement, page_url: str) -> str:
+    for base in tree.iter("base"):
+        declared = (base.get("href") or "").strip()
+        resolved = urljoin(page_url, declared) if declared else ""
+        if urlsplit(resolved).scheme in _WEB_SCHEMES:
+            return resolved
+        break
+    return page_url
+
+
+def restore_urls(text: str, known_urls: set[str]) -> str:
+    """Undo `html.unescape` damage (trafilatura applies it to its output, URLs included):
+    "...&section=2" came out as "...§ion=2", "&copy=1" as "©=1"."""
+    damaged = {html.unescape(url): url for url in known_urls if html.unescape(url) != url}
+    for mangled in sorted(damaged, key=len, reverse=True):
+        text = text.replace(mangled, damaged[mangled])
+    return text

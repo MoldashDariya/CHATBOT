@@ -60,6 +60,10 @@ strict = true
 plugins = ["pydantic.mypy"]
 files = ["bot"]
 
+[[tool.mypy.overrides]]
+module = ["lxml", "lxml.*"]
+ignore_missing_imports = true  # lxml has no bundled stubs
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
