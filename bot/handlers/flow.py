@@ -22,6 +22,7 @@ _STAGE_TEXT = {
     Stage.FETCHING: "status_fetch",
     Stage.READING: "status_read",
     Stage.ANALYZING: "status_analyze",
+    Stage.FOLLOWING: "status_follow",
 }
 
 Job = Callable[[StageCallback], Awaitable[Summary]]

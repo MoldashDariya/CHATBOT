@@ -378,3 +378,18 @@ def test_dispatcher_routes_commands_before_the_catch_all_and_carries_the_shared_
     assert dp.workflow_data["rate_limiter"] is limiter
     assert dp.workflow_data["pipeline"] is pipeline
     assert dp.workflow_data["settings"] is settings
+
+
+async def test_reading_linked_pages_shows_its_own_status() -> None:
+    pipeline = FakePipeline(
+        stages=(Stage.READING, Stage.ANALYZING, Stage.FOLLOWING, Stage.ANALYZING)
+    )
+
+    message, _ = await run_handler(URL, pipeline)
+
+    assert edits(message)[:4] == [
+        text("ru", "status_read"),
+        text("ru", "status_analyze"),
+        text("ru", "status_follow"),
+        text("ru", "status_analyze"),
+    ]

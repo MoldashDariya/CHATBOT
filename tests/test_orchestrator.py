@@ -50,6 +50,7 @@ HOSTS = {
     "files.example.edu": [SITE_IP],
     "short.example": [SITE_IP],
     "www.youtube.com": [YOUTUBE_IP],
+    "intranet.example.edu": ["10.0.0.5"],  # a same-site name that points inside the network
 }
 UNIVERSITY_URL = "https://www.example.edu/admissions/undergraduate"
 
@@ -85,6 +86,7 @@ def build(
     timeout_s: float = 10.0,
     messages: FakeMessages | None = None,
     max_file_bytes: int = 15 * 1024 * 1024,
+    follow_pages: int = 0,
 ) -> tuple[Orchestrator, FakeClient]:
     client = FakeClient(*outcomes)
     if messages is not None:
@@ -110,6 +112,7 @@ def build(
         max_concurrent=max_concurrent,
         timeout_s=timeout_s,
         max_file_bytes=max_file_bytes,
+        follow_pages=follow_pages,
     )
     return pipeline, client
 
@@ -709,3 +712,282 @@ async def test_the_declared_type_matters_where_the_bytes_alone_are_ambiguous() -
 
     with pytest.raises(UnsupportedFormatError):  # no declaration: not recognised
         await pipeline.run_file(junk_pdf, filename="rules.pdf", content_type="", language="en")
+
+
+# --- pages the page links to ---------------------------------------------------------------
+
+PROGRAMME_URL = "https://www.example.edu/programme"
+APPLY_URL = "https://www.example.edu/programme/apply-now"
+DEADLINE_SENTENCE = "Non-EU applicants must apply for the winter term by 1 March 2027."
+
+
+def page(body: str) -> bytes:
+    filler = "The programme is taught in English and lasts two years. " * 8
+    return (
+        f"<html><head><title>Programme</title></head>"
+        f"<body><main><p>{filler}</p>{body}</main></body></html>"
+    ).encode()
+
+
+def serve_programme(router: respx.MockRouter, links: str) -> None:
+    router.get(f"https://{SITE_IP}/programme").respond(
+        200, content=page(f"<p>For dates and requirements see the {links}.</p>"),
+        headers={"Content-Type": "text/html"},
+    )  # fmt: skip
+
+
+def serve_apply(
+    router: respx.MockRouter, path: str = "/programme/apply-now", status: int = 200
+) -> respx.Route:
+    return router.get(f"https://{SITE_IP}{path}").respond(
+        status,
+        content=page(
+            f"<h2>Deadline</h2><p>{DEADLINE_SENTENCE}</p>"
+            f"<p>{'Documents are listed below. ' * 12}</p>"
+        ),
+        headers={"Content-Type": "text/html"},
+    )
+
+
+NO_DEADLINES = llm_answer(deadlines=[], useful_links=[])
+APPLY_LINK = '<a href="/programme/apply-now">application and deadlines page</a>'
+WITH_DEADLINE = llm_answer(
+    deadlines=[
+        {
+            "label": "Winter term (non-EU)",
+            "date_iso": "2027-03-01",
+            "date_text": "1 March 2027",
+            "quote": DEADLINE_SENTENCE,
+        }
+    ],
+    useful_links=[],
+)
+
+
+async def test_missing_deadlines_make_the_pipeline_read_the_application_page() -> None:
+    pipeline, client = build(reply(NO_DEADLINES), reply(WITH_DEADLINE), follow_pages=2)
+    stages = Recorder()
+
+    with respx.mock() as router:
+        serve_programme(router, APPLY_LINK)
+        apply_page = serve_apply(router)
+        summary = await pipeline.run(PROGRAMME_URL, language="en", on_stage=stages)
+
+    assert apply_page.call_count == 1
+    assert [d.verified for d in summary.deadlines] == [True]
+    assert summary.extra_sources == [APPLY_URL]
+    assert summary.source_url == PROGRAMME_URL  # still the page the user sent
+    assert stages.stages == [
+        Stage.FETCHING, Stage.READING, Stage.ANALYZING, Stage.FOLLOWING, Stage.ANALYZING
+    ]  # fmt: skip
+    second_prompt = client.messages.calls[1]["messages"][0]["content"]
+    assert f"=== Linked page: {APPLY_URL} ===" in second_prompt
+    assert DEADLINE_SENTENCE in second_prompt
+    assert "For dates and requirements" in second_prompt  # the main page is still there
+
+
+async def test_confirmed_deadlines_mean_no_extra_requests() -> None:
+    pipeline, client = build(reply(WITH_DEADLINE), follow_pages=2)
+
+    with respx.mock(assert_all_called=False) as router:
+        serve_programme(router, APPLY_LINK)
+        apply_page = serve_apply(router)
+        # the main page itself states the deadline, so the first answer is already confirmed
+        router.get(f"https://{SITE_IP}/programme").respond(
+            200,
+            content=page(f"<p>{DEADLINE_SENTENCE}</p>{APPLY_LINK}"),
+            headers={"Content-Type": "text/html"},
+        )
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert not apply_page.called and len(client.messages.calls) == 1
+    assert summary.extra_sources == []
+
+
+async def test_the_feature_can_be_switched_off() -> None:
+    pipeline, client = build(reply(NO_DEADLINES), follow_pages=0)
+
+    with respx.mock(assert_all_called=False) as router:
+        serve_programme(router, APPLY_LINK)
+        apply_page = serve_apply(router)
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert not apply_page.called and len(client.messages.calls) == 1
+    assert summary.deadlines == []
+
+
+async def test_an_unrelated_page_is_not_followed() -> None:
+    other = llm_answer(source_type="other", deadlines=[], useful_links=[])
+    pipeline, client = build(reply(other), follow_pages=2)
+
+    with respx.mock(assert_all_called=False) as router:
+        serve_programme(router, APPLY_LINK)
+        apply_page = serve_apply(router)
+        await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert not apply_page.called and len(client.messages.calls) == 1
+
+
+async def test_only_admission_pages_of_the_same_site_are_read() -> None:
+    links = (
+        APPLY_LINK
+        + '<a href="/news/campus">campus news</a>'
+        + '<a href="https://other.org/admission">admission elsewhere</a>'
+        + '<a href="https://www.example.edu/programme/fees.jpg">admission poster</a>'
+    )
+    pipeline, _ = build(reply(NO_DEADLINES), reply(WITH_DEADLINE), follow_pages=3)
+
+    with respx.mock(assert_all_called=False) as router:
+        serve_programme(router, links)
+        serve_apply(router)
+        news = router.get(f"https://{SITE_IP}/news/campus").respond(200, text="x")
+        poster = router.get(f"https://{SITE_IP}/programme/fees.jpg").respond(200, text="x")
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert summary.extra_sources == [APPLY_URL]
+    assert not news.called and not poster.called  # and other.org has no route: any attempt fails
+
+
+async def test_no_more_pages_than_the_configured_number() -> None:
+    links = "".join(f'<a href="/programme/apply-{n}">apply route {n}</a>' for n in range(5))
+    pipeline, _ = build(reply(NO_DEADLINES), reply(WITH_DEADLINE), follow_pages=2)
+
+    with respx.mock(assert_all_called=False) as router:
+        serve_programme(router, links)
+        routes = [serve_apply(router, f"/programme/apply-{n}") for n in range(5)]
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert sum(route.call_count for route in routes) == 2
+    assert len(summary.extra_sources) == 2
+
+
+async def test_linked_pages_are_not_followed_further() -> None:
+    deep = page(
+        f'<p>{DEADLINE_SENTENCE}</p><a href="/programme/apply-now/forms">application forms</a>'
+    )
+    pipeline, _ = build(reply(NO_DEADLINES), reply(WITH_DEADLINE), follow_pages=2)
+
+    with respx.mock(assert_all_called=False) as router:
+        serve_programme(router, APPLY_LINK)
+        router.get(f"https://{SITE_IP}/programme/apply-now").respond(
+            200, content=deep, headers={"Content-Type": "text/html"}
+        )
+        forms = router.get(f"https://{SITE_IP}/programme/apply-now/forms").respond(200, text="x")
+        await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert not forms.called
+
+
+@pytest.mark.parametrize("status", [404, 403, 500])
+async def test_an_unreachable_linked_page_costs_nothing(status: int) -> None:
+    pipeline, client = build(reply(NO_DEADLINES), follow_pages=2)
+
+    with respx.mock() as router:
+        serve_programme(router, APPLY_LINK)
+        serve_apply(router, status=status)
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert len(client.messages.calls) == 1  # no second model call for nothing
+    assert summary.extra_sources == [] and summary.deadlines == []
+
+
+async def test_a_linked_page_with_no_text_is_skipped() -> None:
+    pipeline, client = build(reply(NO_DEADLINES), follow_pages=2)
+
+    with respx.mock() as router:
+        serve_programme(router, APPLY_LINK)
+        router.get(f"https://{SITE_IP}/programme/apply-now").respond(
+            200,
+            content=(FIXTURES / "js_shell.html").read_bytes(),
+            headers={"Content-Type": "text/html"},
+        )
+        await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert len(client.messages.calls) == 1
+
+
+async def test_a_same_site_name_that_points_inside_the_network_is_never_requested() -> None:
+    link = '<a href="https://intranet.example.edu/apply">application</a>'
+    pipeline, client = build(reply(NO_DEADLINES), follow_pages=2)
+
+    with respx.mock(assert_all_called=False) as router:
+        serve_programme(router, link)
+        internal = router.route(host="10.0.0.5").respond(200, text="SECRET")
+        await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert not internal.called and len(client.messages.calls) == 1
+
+
+async def test_if_the_second_answer_is_no_better_the_first_is_kept() -> None:
+    pipeline, _ = build(reply(NO_DEADLINES), reply(NO_DEADLINES), follow_pages=2)
+
+    with respx.mock() as router:
+        serve_programme(router, APPLY_LINK)
+        serve_apply(router)
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert summary.extra_sources == []  # nothing was gained, so nothing is credited
+
+
+async def test_if_the_second_answer_is_not_verified_the_first_is_kept() -> None:
+    invented = llm_answer(
+        deadlines=[
+            {
+                "label": "X",
+                "date_iso": None,
+                "date_text": "tomorrow",
+                "quote": "Closes tomorrow at noon sharp",
+            }
+        ],
+        useful_links=[],
+    )
+    pipeline, _ = build(reply(NO_DEADLINES), reply(invented), follow_pages=2)
+
+    with respx.mock() as router:
+        serve_programme(router, APPLY_LINK)
+        serve_apply(router)
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert summary.deadlines == [] and summary.extra_sources == []
+
+
+async def test_a_failing_second_model_call_never_costs_the_user_the_first_answer() -> None:
+    pipeline, client = build(
+        reply(NO_DEADLINES), api_error(anthropic.RateLimitError, 429), follow_pages=2
+    )
+
+    with respx.mock() as router:
+        serve_programme(router, APPLY_LINK)
+        serve_apply(router)
+        summary = await pipeline.run(PROGRAMME_URL, language="en")
+
+    assert len(client.messages.calls) == 2
+    assert summary.source_type is SourceClass.UNIVERSITY_PAGE and summary.extra_sources == []
+
+
+async def test_files_and_saved_inputs_never_follow_links() -> None:
+    html = page(f"<p>See the {APPLY_LINK}.</p>")
+    pipeline, client = build(reply(NO_DEADLINES), reply(NO_DEADLINES), follow_pages=2)
+
+    with respx.mock(assert_all_called=False) as router:
+        anything = router.route().respond(200, text="x")
+        await pipeline.run_file(
+            html, filename="programme.html", content_type="text/html", language="en"
+        )
+        await pipeline.process(
+            RawSource(url=PROGRAMME_URL, body=html), SourceFormat.HTML, language="en"
+        )
+
+    assert not anything.called and len(client.messages.calls) == 2
+
+
+async def test_a_pdf_page_is_not_followed() -> None:
+    answer = llm_answer(deadlines=[], useful_links=[])
+    pipeline, client = build(reply(answer), follow_pages=2)
+
+    with respx.mock(assert_all_called=False) as router:
+        pdf = router.get(f"https://{SITE_IP}/rules.pdf").respond(200, content=RULES_PDF)
+        apply_page = serve_apply(router)
+        await pipeline.run("https://www.example.edu/rules.pdf", language="en")
+
+    assert pdf.called and not apply_page.called and len(client.messages.calls) == 1

@@ -107,6 +107,8 @@ TEXTS: dict[str, dict[str, str]] = {
         "status_download": "⏳ Скачиваю файл…",
         "unsupported_message": "Я читаю ссылки на страницы, PDF и DOCX (ссылкой или файлом) и видео YouTube с субтитрами. Пришли что-то из этого.",
         "err_download": "Не удалось скачать файл из Telegram. Попробуйте отправить его ещё раз.",
+        "status_follow": "🔎 Проверяю связанные страницы…",
+        "also_read": "Дополнительно прочитано (страницы, на которые ссылается источник)",
         "err_generic": "Что-то пошло не так. Попробуйте позже.",
     },
     "en": {
@@ -199,6 +201,8 @@ TEXTS: dict[str, dict[str, str]] = {
         "status_download": "⏳ Downloading the file…",
         "unsupported_message": "I read links to pages, PDF and DOCX (as a link or a file) and YouTube videos with subtitles. Please send one of those.",
         "err_download": "I couldn't download the file from Telegram. Try sending it again.",
+        "status_follow": "🔎 Checking linked pages…",
+        "also_read": "Also read (pages the source links to)",
         "err_generic": "Something went wrong. Try again later.",
     },
     "kk": {
@@ -289,6 +293,8 @@ TEXTS: dict[str, dict[str, str]] = {
         "status_download": "⏳ Файлды жүктеп жатырмын…",
         "unsupported_message": "Мен беттерге сілтемелерді, PDF және DOCX (сілтеме немесе файл ретінде) және субтитрлері бар YouTube бейнелерін оқимын. Осылардың бірін жіберіңіз.",
         "err_download": "Файлды Telegram-нан жүктей алмадым. Қайта жіберіп көріңіз.",
+        "status_follow": "🔎 Байланысты беттерді тексеріп жатырмын…",
+        "also_read": "Қосымша оқылды (дереккөз сілтеме жасаған беттер)",
         "err_generic": "Бірдеңе дұрыс болмады. Кейінірек қайталаңыз.",
     },
 }

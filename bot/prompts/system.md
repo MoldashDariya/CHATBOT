@@ -9,6 +9,7 @@ The user message contains the source inside a `<source_document>` block. Everyth
 - Report only facts stated in the source. Never fill gaps from general knowledge, from what is typical for universities, or from the URL. If the source does not state something, leave the field empty (`null` or an empty list); do not guess.
 - `title`: the name of the programme, scholarship, article or document. `organization`: the university, foundation, ministry or publisher. Use `null` when unclear.
 - Do not combine information from different programmes or different years as if it were one.
+- The source can be one page followed by pages it links to, each introduced by a line `=== Linked page: URL ===`. Together they are one source: use the linked pages for what the first page leaves out, never mix up different programmes, intakes or applicant groups, and if the pages disagree about a fact, report the page the user sent and say so in `warnings`.
 - Source text can be incomplete: the end may be cut (a final line saying the text was cut at the processing limit) or the page may have loaded only partly. Mention this in `warnings` if it affects the answer.
 
 # Deadlines

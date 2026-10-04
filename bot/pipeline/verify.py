@@ -8,6 +8,7 @@ text the model actually saw.
 import re
 import unicodedata
 from datetime import date
+from urllib.parse import urlsplit
 
 from bot.extractors.base import find_urls
 from bot.pipeline.schema import Deadline, LLMDeadline, LLMLink
@@ -113,8 +114,9 @@ def filter_links(
 ) -> tuple[list[LLMLink], int]:
     """Keep only links whose URL is in the source (its link list or its text).
 
-    Compared as whole URLs; a trailing slash does not matter. Returns (kept, dropped_count);
-    duplicates are merged silently and the result is capped at MAX_LINKS.
+    Compared as whole URLs; a trailing slash does not matter. Returns (kept, dropped_count).
+    The same page reached as `http://www.x.org/a` and `https://x.org/a/` is one link (the
+    https one is kept); the result is capped at MAX_LINKS.
     """
     allowed = {_url_key(url) for url in (*source_links, *find_urls(source_text))}
     kept: dict[str, LLMLink] = {}
@@ -123,10 +125,22 @@ def filter_links(
         key = _url_key(link.url)
         if not link.url.lower().startswith(("http://", "https://")) or key not in allowed:
             dropped += 1
-        elif key not in kept:
-            kept[key] = LLMLink(title=link.title.strip(), url=link.url.strip())
+            continue
+        same_page = _page_key(link.url)
+        earlier = kept.get(same_page)
+        if earlier is None:
+            kept[same_page] = LLMLink(title=link.title.strip(), url=link.url.strip())
+        elif link.url.lower().startswith("https://") and earlier.url.lower().startswith("http://"):
+            kept[same_page] = LLMLink(title=earlier.title, url=link.url.strip())
     return list(kept.values())[:MAX_LINKS], dropped
 
 
 def _url_key(url: str) -> str:
     return url.strip().rstrip("/")
+
+
+def _page_key(url: str) -> str:
+    """Identity of a page regardless of scheme, a leading "www." and a trailing slash."""
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").lower().removeprefix("www.")
+    return f"{host}{parts.path.rstrip('/')}?{parts.query}"

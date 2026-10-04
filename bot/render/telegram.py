@@ -109,6 +109,8 @@ def render_summary(summary: Summary) -> list[str]:
     if notes:
         blocks.append([f"⚠️ <b>{_esc(text(lang, 'notes'))}</b>", *notes])
     blocks.append([_confidence_line(summary, lang)])
+    if summary.extra_sources:
+        blocks.append(_extra_sources(summary, lang))
     blocks.append([_source_line(summary, lang)])  # always last
     return _pack(blocks)
 
@@ -158,7 +160,11 @@ def _links_section(summary: Summary, lang: str) -> list[str]:
             continue  # an href must be http(s); the filter upstream already guarantees it
         title = _esc(_clip(link.title, MAX_LABEL) or _domain(link.url))
         href = _esc(link.url.strip())
-        items.append(f'{_BULLET} <a href="{href}">{title}</a> — {_esc(_domain(link.url))}')
+        # The domain goes in <code>: as plain text Telegram would auto-link it, and every line
+        # would show two tappable links.
+        items.append(
+            f'{_BULLET} <a href="{href}">{title}</a> — <code>{_esc(_domain(link.url))}</code>'
+        )
     heading = f"🔗 <b>{_esc(text(lang, 'links'))}</b>"
     return [heading, *(items or [f"<i>— {_esc(text(lang, 'no_links'))}</i>"])]
 
@@ -190,6 +196,17 @@ def _confidence_line(summary: Summary, lang: str) -> str:
     emoji = _CONFIDENCE_EMOJI[summary.confidence]
     label = text(lang, f"confidence_{summary.confidence.value}")
     return f"{emoji} {_esc(text(lang, 'confidence'))}: {_esc(label)}"
+
+
+def _extra_sources(summary: Summary, lang: str) -> list[str]:
+    """Pages read besides the one the user sent: the facts may come from them."""
+    items = []
+    for url in summary.extra_sources:
+        if _is_web_url(url):
+            items.append(
+                f'{_BULLET} <a href="{_esc(url.strip())}">{_esc(_clip(url, MAX_URL_TEXT))}</a>'
+            )
+    return [f"📎 <b>{_esc(text(lang, 'also_read'))}:</b>", *items] if items else []
 
 
 def _source_line(summary: Summary, lang: str) -> str:

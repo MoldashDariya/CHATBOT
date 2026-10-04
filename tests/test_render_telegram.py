@@ -482,3 +482,49 @@ def test_apostrophes_stay_literal_in_the_card() -> None:
 
     assert "Master's programme" in markup and "Don't miss" in markup
     assert "&#" not in markup  # no numeric entities anywhere
+
+
+# --- pages read besides the source --------------------------------------------------------
+
+
+def test_pages_read_in_addition_are_listed_before_the_source() -> None:
+    extra = ["https://www.example.edu/programme/apply-now", "https://www.example.edu/fees"]
+    text = plain(card(extra_sources=extra))
+
+    assert "📎 Дополнительно прочитано (страницы, на которые ссылается источник):" in text
+    assert text.index("📎") < text.index("🔎")
+    assert text.index("🟢") < text.index("📎")  # after the reliability line
+    assert "• https://www.example.edu/programme/apply-now" in text
+    assert text.rstrip().splitlines()[-1].startswith("🔎 Источник:")  # the source stays last
+
+
+def test_the_extra_pages_are_real_links() -> None:
+    markup = card(extra_sources=["https://www.example.edu/apply?a=1&b=2"])
+
+    assert '<a href="https://www.example.edu/apply?a=1&amp;b=2">' in markup
+    assert markup_problems(markup) == []
+
+
+def test_without_extra_pages_there_is_no_such_block() -> None:
+    assert "📎" not in card()
+
+
+@pytest.mark.parametrize("bad", ["javascript:alert(1)", "ftp://x.edu/a", ""])
+def test_extra_pages_must_be_web_addresses(bad: str) -> None:
+    markup = card(extra_sources=[bad])
+
+    assert "📎" not in markup and markup_problems(markup) == []
+
+
+def test_the_block_is_translated() -> None:
+    assert "Also read (pages the source links to):" in plain(
+        card(language="en", extra_sources=["https://x.edu/a"])
+    )
+    assert "Қосымша оқылды" in plain(card(language="kk", extra_sources=["https://x.edu/a"]))
+
+
+def test_the_domain_next_to_a_link_cannot_be_auto_linked_by_telegram() -> None:
+    markup = card()
+
+    assert "— <code>www.example.edu</code>" in markup  # plain text would become a second link
+    assert markup_problems(markup) == []

@@ -200,6 +200,22 @@
           "Januaryin"
         ]
       }
+    },
+    {
+      "id": "live-rwth-data-science-follows-apply-page",
+      "source": {
+        "url": "https://sc.informatik.rwth-aachen.de/en/studium/master/master-data-science/"
+      },
+      "language": "ru",
+      "expected": {
+        "source_type": "university_page",
+        "deadlines": [
+          "March 1",
+          "September 1",
+          "July 15",
+          "January 15"
+        ]
+      }
     }
   ]
 }

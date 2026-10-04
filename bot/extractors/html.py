@@ -32,6 +32,10 @@ _UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
 
 # Elements whose contents are left exactly as they are when separating glued neighbours.
 _VERBATIM_TAGS = frozenset({"pre", "code", "script", "style", "textarea"})
+# Superscripts and subscripts belong to what precedes them: "15<sup>th</sup>", "x<sup>2</sup>",
+# "H<sub>2</sub>O", footnote marks. They never get a space.
+_ATTACHED_TAGS = frozenset({"sup", "sub"})
+_ORDINAL_SUFFIXES = frozenset({"st", "nd", "rd", "th"})
 _MAX_SIBLING_CHILDREN = 8  # glue happens between small inline widgets, not page-sized blocks
 _SEPARATION_BUDGET_CHARS = 5_000_000  # a hostile deep page must not make this quadratic
 
@@ -170,6 +174,14 @@ def prepare_links(tree: HtmlElement, page_url: str) -> set[str]:
     return urls
 
 
+def _is_attached(element: HtmlElement) -> bool:
+    """A superscript or subscript, or a wrapper holding nothing else: `<b><sup>st</sup></b>`."""
+    if element.tag in _ATTACHED_TAGS:
+        return True
+    only_child = len(element) == 1 and not (element.text or "").strip()
+    return only_child and isinstance(element[0].tag, str) and _is_attached(element[0])
+
+
 def separate_glued_elements(tree: HtmlElement) -> int:
     """Put a space between neighbouring elements whose texts would otherwise run together.
 
@@ -190,6 +202,8 @@ def separate_glued_elements(tree: HtmlElement) -> int:
             following is None
             or not isinstance(following.tag, str)
             or following in verbatim
+            or _is_attached(element)
+            or _is_attached(following)
             or element.tail
             or len(element) > _MAX_SIBLING_CHILDREN
             or len(following) > _MAX_SIBLING_CHILDREN
@@ -199,7 +213,13 @@ def separate_glued_elements(tree: HtmlElement) -> int:
         budget -= len(left) + len(right)
         if budget < 0:
             break
-        if left and right and left[-1].isalnum() and right[0].isalnum():
+        if (
+            left
+            and right
+            and left[-1].isalnum()
+            and right[0].isalnum()
+            and not (left[-1].isdigit() and right.strip().lower() in _ORDINAL_SUFFIXES)
+        ):
             element.tail = " "
             opened += 1
 

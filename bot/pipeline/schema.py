@@ -106,6 +106,7 @@ class Summary(BaseModel):
     truncated: bool = False  # the source text was cut at the processing limit
     pages_read: int | None = None  # PDF: partial coverage when pages_read < pages_total
     pages_total: int | None = None
+    extra_sources: list[str] = []  # linked pages that were read in addition to the source
 
     @property
     def partial_coverage(self) -> bool:

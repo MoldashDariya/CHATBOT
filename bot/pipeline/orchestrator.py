@@ -14,9 +14,9 @@ from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 
 from bot.config import Settings
-from bot.errors import ContentTooLargeError, ProcessingTimeoutError
+from bot.errors import BotError, ContentTooLargeError, ProcessingTimeoutError
 from bot.extractors import build_extractors
-from bot.extractors.base import Extractor, RawSource
+from bot.extractors.base import ExtractedContent, Extractor, RawSource
 from bot.pipeline.cleaner import clean_content, ensure_enough_text
 from bot.pipeline.detector import (
     SourceFormat,
@@ -25,7 +25,8 @@ from bot.pipeline.detector import (
     detect_from_url,
     detect_response,
 )
-from bot.pipeline.schema import Summary
+from bot.pipeline.followups import candidate_links, combine
+from bot.pipeline.schema import SourceClass, Summary
 from bot.pipeline.summarizer import Summarizer
 from bot.security.safe_fetch import SafeFetcher
 
@@ -43,6 +44,7 @@ class Stage(StrEnum):
     FETCHING = "fetching"
     READING = "reading"
     ANALYZING = "analyzing"
+    FOLLOWING = "following"  # reading pages the page links to
 
 
 StageCallback = Callable[[Stage], Awaitable[None]]
@@ -59,6 +61,7 @@ class Orchestrator:
         max_concurrent: int = 4,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         max_file_bytes: int = 15 * 1024 * 1024,
+        follow_pages: int = 0,
     ) -> None:
         self._fetcher = fetcher
         self._extractors = extractors
@@ -66,6 +69,7 @@ class Orchestrator:
         self._max_chars = max_chars
         self._timeout_s = timeout_s
         self._max_file_bytes = max_file_bytes
+        self._follow_pages = follow_pages
         # Parsing runs in threads and the model call is the expensive part: cap both so a burst
         # of users queues up instead of exhausting CPU, memory or the API rate limit.
         self._slots = asyncio.Semaphore(max_concurrent)
@@ -80,6 +84,7 @@ class Orchestrator:
             max_chars=settings.max_chars,
             max_concurrent=settings.max_concurrent_jobs,
             max_file_bytes=settings.max_download_mb * 1024 * 1024,
+            follow_pages=settings.follow_linked_pages,
         )
 
     async def aclose(self) -> None:
@@ -142,7 +147,7 @@ class Orchestrator:
         else:
             raw = RawSource(url=url)
         return await self.process(
-            raw, source_format, language=language, source_url=url, on_stage=on_stage
+            raw, source_format, language=language, source_url=url, on_stage=on_stage, follow=True
         )
 
     async def process(
@@ -153,18 +158,73 @@ class Orchestrator:
         language: str,
         source_url: str | None = None,
         on_stage: StageCallback | None = None,
+        follow: bool = False,
     ) -> Summary:
         """Everything after the download. `source_url` is shown as the source; by default the
-        user's own link (not the final URL after redirects, which may be a tracking hop)."""
+        user's own link (not the final URL after redirects, which may be a tracking hop).
+        `follow` allows reading linked pages when the summary has no confirmed deadline; only
+        `run` turns it on, never an uploaded file or a saved evaluation input."""
         await _report(on_stage, Stage.READING)
         content = await self._extractors[source_format].extract(raw)
         content = clean_content(content, self._max_chars)
         ensure_enough_text(content)  # a near-empty page never reaches the model
 
+        shown = source_url or raw.url
         await _report(on_stage, Stage.ANALYZING)
-        return await self._summarizer.summarize(
-            content, language=language, source_url=source_url or raw.url
-        )
+        summary = await self._summarizer.summarize(content, language=language, source_url=shown)
+
+        if follow and source_format is SourceFormat.HTML and _needs_linked_pages(summary):
+            extras = await self._read_linked_pages(content, on_stage)
+            if extras:
+                combined = clean_content(combine(content, extras), self._max_chars)
+                await _report(on_stage, Stage.ANALYZING)
+                try:
+                    fuller = await self._summarizer.summarize(
+                        combined, language=language, source_url=shown
+                    )
+                except BotError as exc:
+                    # The first answer is already good enough to show; the bonus must not cost it.
+                    logger.info("Second pass skipped: %s", type(exc).__name__)
+                else:
+                    if _confirmed_deadlines(fuller) > _confirmed_deadlines(summary):
+                        summary = fuller.model_copy(
+                            update={"extra_sources": [extra.source_url for extra in extras]}
+                        )
+        return summary
+
+    async def _read_linked_pages(
+        self, content: ExtractedContent, on_stage: StageCallback | None
+    ) -> list[ExtractedContent]:
+        """The pages the content links to for admission information, extracted and cleaned.
+        A page that cannot be fetched or read is skipped: this is a bonus, never a failure."""
+        urls = candidate_links(content, limit=self._follow_pages)
+        if not urls:
+            return []
+        await _report(on_stage, Stage.FOLLOWING)
+        results = await asyncio.gather(*(self._read_one(url) for url in urls))
+        return [page for page in results if page is not None]
+
+    async def _read_one(self, url: str) -> ExtractedContent | None:
+        try:
+            fetched = await self._fetcher.fetch(url)  # same SSRF guard and limits as any link
+            source_format = detect_response(fetched)
+            page = await self._extractors[source_format].extract(
+                RawSource(url=fetched.url, body=fetched.body, content_type=fetched.content_type)
+            )
+            page = clean_content(page, self._max_chars)
+            ensure_enough_text(page)
+        except BotError as exc:
+            logger.info("Linked page skipped: %s", type(exc).__name__)
+            return None
+        return page
+
+
+def _confirmed_deadlines(summary: Summary) -> int:
+    return sum(deadline.verified for deadline in summary.deadlines)
+
+
+def _needs_linked_pages(summary: Summary) -> bool:
+    return summary.source_type is not SourceClass.OTHER and _confirmed_deadlines(summary) == 0
 
 
 async def _report(on_stage: StageCallback | None, stage: Stage) -> None:

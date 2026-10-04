@@ -350,3 +350,32 @@ def test_non_web_urls_are_dropped_even_if_an_extractor_reported_them() -> None:
     kept, dropped = filter_links([link(url) for url in reported], "no urls", reported)
 
     assert kept == [] and dropped == 3
+
+
+def test_the_same_page_under_different_schemes_and_hosts_is_one_link() -> None:
+    text = (
+        "http://www.cs.rwth-aachen.de/ https://www.cs.rwth-aachen.de/ "
+        "https://cs.rwth-aachen.de https://www.rwth-aachen.de/"
+    )
+    kept, dropped = filter_links(
+        [
+            link("http://www.cs.rwth-aachen.de/", "Faculty"),
+            link("https://www.cs.rwth-aachen.de/", "Faculty (cs.rwth-aachen.de)"),
+            link("https://cs.rwth-aachen.de", "Faculty again"),
+            link("https://www.rwth-aachen.de/", "University"),
+        ],
+        text,
+        (),
+    )
+
+    assert [(k.title, k.url) for k in kept] == [
+        ("Faculty", "https://www.cs.rwth-aachen.de/"),  # first title, the https address
+        ("University", "https://www.rwth-aachen.de/"),
+    ]
+    assert dropped == 0
+
+
+def test_different_pages_of_one_site_stay_separate() -> None:
+    text = "https://x.edu/a https://x.edu/b https://x.edu/a?lang=de"
+    kept, _ = filter_links([link(u) for u in text.split()], text, ())
+    assert len(kept) == 3

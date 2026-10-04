@@ -61,6 +61,22 @@ def test_neighbours_that_would_run_together_get_a_space(markup: str, expected: s
         "<pre>word<span>more</span></pre>",  # text, then a span, inside code
         "<code>word<span>more</span></code>",
         "<p>text<b>bold</b>more</p>",
+        # superscripts and subscripts attach to what precedes them
+        "<p>March <strong>1</strong><sup>st</sup></p>",
+        "<p>July <span>15</span><sup>th</sup></p>",
+        "<p><b>E</b><sup>2</sup></p>",
+        "<p>H<sub>2</sub>O and E=mc<sup>2</sup></p>",
+        "<p><sup>1</sup><b>Note</b></p>",
+        "<p><b>x</b><sup>2</sup><sub>i</sub></p>",
+        # the real markup of a date on an admissions page: the index hides inside a wrapper
+        "<p>March\u00a0<strong>1</strong><b><sup>st</sup></b></p>",
+        "<p><span>2</span><b><i><sup>nd</sup></i></b></p>",
+        # a wrapped index that is not an ordinal suffix (so only the wrapper rule protects it)
+        "<p><span>x</span><b><sup>2</sup></b></p>",
+        "<p><b>E</b><i><b><sub>0</sub></b></i></p>",
+        # and ordinal suffixes in ordinary elements
+        "<p><span>15</span><span>th</span></p>",
+        "<p><b>3</b><i>RD</i></p>",
     ],
 )
 def test_text_that_is_fine_is_left_exactly_as_it_is(markup: str) -> None:
@@ -225,3 +241,8 @@ def test_a_tied_word_stays_if_the_dominant_alphabet_has_no_twin_for_its_letters(
     # safe Cyrillic twin, so the word is left exactly as it is.
     russian_text = "Skір и ещё много русских слов в этом тексте"
     assert fold_look_alikes(russian_text) == (russian_text, 0)
+
+
+def test_a_word_that_merely_starts_like_a_suffix_still_gets_its_space() -> None:
+    assert separated("<p><b>15</b><span>thanks</span></p>") == "15 thanks"
+    assert separated("<p><b>March</b><span>st</span></p>") == "March st"  # a word, not a number
