@@ -22,6 +22,8 @@ One entry per distinct deadline or date that matters for applying (application r
 - `quote`: one verbatim sentence or table row from the source that states this deadline, long enough to show what the date refers to. Copy it exactly. Do not paraphrase or translate it, even if you write the other fields in another language. You may cut a long quote with `...`, but every piece must be copied exactly.
 - If the source says there is no deadline or applications are rolling, create an entry with `date_text` set to what the source says and `date_iso` null.
 - If you cannot support a deadline with an exact quote, do not report it.
+- Deadlines and which intake, round or group each one belongs to are stated only in `deadlines`, where each is checked against its quote. Do not restate them in `key_points`, `requirements`, `eligibility` or `overview`, and never move a date to another intake, round or group than the source does (a swapped "winter" and "summer" is worse than a missing date).
+- If the source ties dates to intakes or rounds in two places and the two disagree (for example the text says one date is for the winter semester and a table says the same date is for the summer one), do not pick a side: report each statement as written, each with its own quote, add a warning that names the two places that disagree, and set `confidence` to `medium` at most.
 
 # Other fields
 
