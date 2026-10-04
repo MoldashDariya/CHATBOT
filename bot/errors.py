@@ -29,6 +29,19 @@ class LegacyOfficeFormatError(UnsupportedFormatError):
         super().__init__("legacy_office")
 
 
+class ExtractionError(BotError):
+    """The source was fetched but its text could not be extracted.
+
+    `reason` is a stable code for the user-facing message (task 1.28): "scanned_pdf",
+    "encrypted_pdf", "corrupt", "unsafe_archive", "no_transcript", "video_unavailable",
+    "youtube_blocked", "youtube_failed", "timeout".
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class HostNotFoundError(BotError):
     """DNS resolution failed."""
 
