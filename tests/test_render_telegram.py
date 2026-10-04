@@ -234,7 +234,6 @@ def test_hrefs_are_escaped_and_complete() -> None:
 
 
 def test_the_shown_domain_never_starts_with_www() -> None:
-    # Telegram links a text that starts with "www." even inside <code>.
     links = [
         LLMLink(title="A", url="https://www.uni-saarland.de/en/fees.html"),
         LLMLink(title="B", url="https://wwwx.example.org/a"),  # not a prefix: stays as it is

@@ -91,8 +91,7 @@ def _is_web_url(url: str) -> bool:
 
 
 def _domain(url: str) -> str:
-    """The host as shown next to a link. Without a leading "www.": Telegram turns a text that
-    starts with "www." into a link even inside <code>, and the prefix tells the reader nothing."""
+    """The host as shown next to a link, without a leading "www." (it tells the reader nothing)."""
     host = (urlsplit(url).hostname or "").removeprefix("www.")
     try:
         return host.encode("ascii").decode("idna")  # show Cyrillic domains as people know them
