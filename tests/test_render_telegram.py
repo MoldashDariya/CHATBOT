@@ -6,6 +6,7 @@ import pytest
 from bot.pipeline.schema import Confidence, LLMLink, SourceClass
 from bot.render.telegram import (
     MAX_URL_TEXT,
+    MAX_WARNING,
     SAFE_LIMIT,
     TELEGRAM_LIMIT,
     _esc,
@@ -200,7 +201,7 @@ def test_model_warnings_are_listed_clipped_and_escaped() -> None:
 
     assert "• Check <b>this</b> & that" in text  # shown literally, not interpreted
     longest = max(len(line) for line in text.splitlines() if line.startswith("• Источник против"))
-    assert longest <= 352 and "…" in text
+    assert longest <= MAX_WARNING + 2 and "…" in text
 
 
 @pytest.mark.parametrize(
@@ -221,8 +222,8 @@ def test_confidence_is_shown(confidence: Confidence, emoji: str, word: str) -> N
 def test_every_link_shows_its_domain_next_to_the_title() -> None:
     text = plain(card())
 
-    assert "• Онлайн-портал подачи заявок — www.example.edu" in text
-    assert "• FAQ по поступлению — www.example.edu" in text
+    assert "• Онлайн-портал подачи заявок — example.edu" in text
+    assert "• FAQ по поступлению — example.edu" in text
 
 
 def test_hrefs_are_escaped_and_complete() -> None:
@@ -230,6 +231,39 @@ def test_hrefs_are_escaped_and_complete() -> None:
 
     assert '<a href="https://www.example.edu/faq?lang=en&amp;x=1">FAQ по поступлению</a>' in markup
     assert markup_problems(markup) == []
+
+
+def test_the_shown_domain_never_starts_with_www() -> None:
+    # Telegram links a text that starts with "www." even inside <code>.
+    links = [
+        LLMLink(title="A", url="https://www.uni-saarland.de/en/fees.html"),
+        LLMLink(title="B", url="https://wwwx.example.org/a"),  # not a prefix: stays as it is
+    ]
+    markup = card(useful_links=links)
+
+    assert "<code>uni-saarland.de</code>" in markup
+    assert "<code>wwwx.example.org</code>" in markup
+    assert "<code>www." not in markup
+    assert 'href="https://www.uni-saarland.de/en/fees.html"' in markup  # the link itself is exact
+
+
+def test_a_two_sentence_warning_is_shown_whole() -> None:
+    warning = (
+        "The text under 'How to apply' says winter applications close on 15 May and summer ones "
+        "on 15 November, while the deadline table says the opposite for each semester, so the "
+        "page contradicts itself. It is not possible to tell which version is correct: check "
+        "the official site before applying, and ask the admissions office by e-mail if the "
+        "dates are still unclear to you at that point."
+    )
+    assert MAX_WARNING > len(warning) > 350
+
+    assert warning in plain(card(warnings=[warning]))
+
+
+def test_a_very_long_warning_is_cut_with_a_mark() -> None:
+    shown = plain(card(warnings=["word " * 400]))
+
+    assert "…" in shown.split("Важно")[1]
 
 
 def test_internationalised_domains_are_shown_readably() -> None:
@@ -564,5 +598,5 @@ def test_the_block_is_translated() -> None:
 def test_the_domain_next_to_a_link_cannot_be_auto_linked_by_telegram() -> None:
     markup = card()
 
-    assert "— <code>www.example.edu</code>" in markup  # plain text would become a second link
+    assert "— <code>example.edu</code>" in markup  # plain text would become a second link
     assert markup_problems(markup) == []
