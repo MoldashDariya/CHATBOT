@@ -54,6 +54,13 @@ def detect_from_url(url: str) -> SourceFormat | None:
     return None
 
 
+def check_filename(filename: str) -> None:
+    """The file-upload counterpart of the URL pre-check: refuse a legacy .doc by its name,
+    before the file is even read."""
+    if filename.strip().lower().endswith(".doc"):
+        raise LegacyOfficeFormatError
+
+
 def detect_from_content(content_type: str, body: bytes) -> SourceFormat:
     """Decide from the downloaded bytes. `content_type` is lower-cased, without parameters."""
     if not body.lstrip(_WHITESPACE):  # lstrip copies only if something was stripped

@@ -68,6 +68,10 @@ class LLMError(BotError):
         self.reason = reason
 
 
+class DownloadFailedError(BotError):
+    """Telegram would not hand over the file the user sent."""
+
+
 class ProcessingTimeoutError(BotError):
     """The whole request (queue, download, reading, analysis) exceeded its time budget."""
 

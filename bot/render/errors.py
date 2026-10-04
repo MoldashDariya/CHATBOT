@@ -11,6 +11,7 @@ from bot.errors import (
     BlockedURLError,
     BotError,
     ContentTooLargeError,
+    DownloadFailedError,
     ExtractionError,
     FetchFailedError,
     FetchHTTPError,
@@ -85,6 +86,8 @@ def _classify(exc: BaseException, max_download_mb: int) -> tuple[str, dict[str, 
             return _http_key(code), {"code": code}
         case FetchTimeoutError():
             return "err_timeout", {}
+        case DownloadFailedError():
+            return "err_download", {}
         case ProcessingTimeoutError():
             return "err_processing_timeout", {}
         case FetchFailedError():

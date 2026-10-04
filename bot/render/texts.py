@@ -104,6 +104,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "multiple_urls": "Нашёл несколько ссылок, обработаю первую. Остальные пришли отдельными сообщениями.",
         "rate_limited": "Слишком много запросов за последний час. Попробуй снова через {minutes} мин.",
         "err_processing_timeout": "Обработка заняла слишком много времени. Попробуйте ещё раз или пришлите страницу поменьше.",
+        "status_download": "⏳ Скачиваю файл…",
+        "unsupported_message": "Я читаю ссылки на страницы, PDF и DOCX (ссылкой или файлом) и видео YouTube с субтитрами. Пришли что-то из этого.",
+        "err_download": "Не удалось скачать файл из Telegram. Попробуйте отправить его ещё раз.",
         "err_generic": "Что-то пошло не так. Попробуйте позже.",
     },
     "en": {
@@ -193,6 +196,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "multiple_urls": "I found several links and will process the first one. Send the others as separate messages.",
         "rate_limited": "Too many requests in the last hour. Try again in {minutes} min.",
         "err_processing_timeout": "Processing took too long. Try again or send a smaller page.",
+        "status_download": "⏳ Downloading the file…",
+        "unsupported_message": "I read links to pages, PDF and DOCX (as a link or a file) and YouTube videos with subtitles. Please send one of those.",
+        "err_download": "I couldn't download the file from Telegram. Try sending it again.",
         "err_generic": "Something went wrong. Try again later.",
     },
     "kk": {
@@ -280,6 +286,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "multiple_urls": "Бірнеше сілтеме таптым, біріншісін өңдеймін. Қалғандарын бөлек хабарламамен жіберіңіз.",
         "rate_limited": "Соңғы сағатта сұраулар тым көп. {minutes} минуттан кейін қайталаңыз.",
         "err_processing_timeout": "Өңдеу тым ұзаққа созылды. Қайталап көріңіз немесе кішірек бет жіберіңіз.",
+        "status_download": "⏳ Файлды жүктеп жатырмын…",
+        "unsupported_message": "Мен беттерге сілтемелерді, PDF және DOCX (сілтеме немесе файл ретінде) және субтитрлері бар YouTube бейнелерін оқимын. Осылардың бірін жіберіңіз.",
+        "err_download": "Файлды Telegram-нан жүктей алмадым. Қайта жіберіп көріңіз.",
         "err_generic": "Бірдеңе дұрыс болмады. Кейінірек қайталаңыз.",
     },
 }

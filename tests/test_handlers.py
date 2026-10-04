@@ -374,7 +374,7 @@ def test_dispatcher_routes_commands_before_the_catch_all_and_carries_the_shared_
 
     dp = build_dispatcher(limiter, pipeline, settings)  # type: ignore[arg-type]
 
-    assert [router.name for router in dp.sub_routers] == ["start", "link"]
+    assert [router.name for router in dp.sub_routers] == ["start", "link", "document"]
     assert dp.workflow_data["rate_limiter"] is limiter
     assert dp.workflow_data["pipeline"] is pipeline
     assert dp.workflow_data["settings"] is settings
