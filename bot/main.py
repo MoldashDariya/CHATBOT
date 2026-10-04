@@ -7,12 +7,14 @@ from aiogram.client.default import DefaultBotProperties
 from bot.config import get_settings
 from bot.handlers import link, start
 from bot.log import setup_logging
+from bot.security.limits import RateLimiter
 
 logger = logging.getLogger(__name__)
 
 
-def build_dispatcher() -> Dispatcher:
-    dp = Dispatcher()
+def build_dispatcher(rate_limiter: RateLimiter) -> Dispatcher:
+    # Keyword arguments become workflow data, injected into handlers by parameter name.
+    dp = Dispatcher(rate_limiter=rate_limiter)
     # Order matters: commands must be matched before the catch-all text handler.
     dp.include_router(start.router)
     dp.include_router(link.router)
@@ -27,7 +29,7 @@ async def run() -> None:
         token=settings.telegram_bot_token.get_secret_value(),
         default=DefaultBotProperties(link_preview_is_disabled=True),
     )
-    dp = build_dispatcher()
+    dp = build_dispatcher(RateLimiter(limit=settings.rate_limit_per_hour, window_s=3600))
     try:
         me = await bot.get_me()
         logger.info("Starting bot @%s", me.username)

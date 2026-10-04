@@ -38,10 +38,15 @@ Telegram AI-бот. Пользователь отправляет ссылку �
 ```
 bot/
   main.py                # запуск aiogram, регистрация роутеров
-  config.py              # pydantic-settings, чтение .env
+  config.py              # pydantic-settings, чтение .env (токен проверяется по формату)
+  log.py                 # настройка логирования
+  errors.py              # доменные исключения (BotError и наследники)
+  messages.py            # тексты для пользователя (RU)
+  urls.py                # поиск URL в тексте сообщения
   handlers/
     start.py             # /start, /help, /lang
-    link.py              # обработка URL в тексте
+    link.py              # обработка URL в тексте, rate limit
+    status.py            # статус-сообщение, редактируемое по этапам
     document.py          # обработка присланных PDF/DOCX
   pipeline/
     orchestrator.py      # detect → fetch → extract → clean → summarize → render
@@ -59,7 +64,8 @@ bot/
     telegram.py          # карточка → HTML для Telegram, разбиение >4096 символов
   security/
     url_guard.py         # SSRF-защита, валидация URL
-    limits.py            # лимиты размера/времени/rate limit
+    safe_fetch.py        # HTTP GET: guard на каждом редиректе, лимит размера, общий таймаут
+    limits.py            # rate limit на пользователя (скользящее окно, в памяти)
   storage/
     cache.py             # SQLite: кэш по нормализованному URL + хэшу контента
   prompts/
@@ -160,6 +166,15 @@ Telegram не поддерживает таблицы, поэтому это к�
 - **SSRF**: только `http/https`; резолвить DNS и блокировать private/loopback/link-local
   (`127.0.0.0/8`, `10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `::1`, `fc00::/7`);
   проверять и на каждом редиректе; лимит редиректов ≤5.
+  - Проверяются **все** адреса, в которые резолвится имя; адреса внутри IPv4-mapped, 6to4, NAT64
+    оцениваются по вложенному IPv4, Teredo и multicast запрещены.
+  - Против DNS-rebinding: имя резолвится один раз, соединение идёт на проверенный IP
+    (`Host` и SNI остаются оригинальными). Никогда не отдавать httpx исходное имя хоста.
+  - Разрешены только порты 80 и 443; URL с логином/паролем (`user:pass@`) отклоняются.
+  - httpx: `trust_env=False` (прокси из окружения подменили бы проверенный адрес) и
+    `follow_redirects=False` (редиректы идут вручную через guard).
+  - Всё выше сидит в `security/`. Новые сетевые вызовы к пользовательским URL делать только
+    через `SafeFetcher`, не напрямую через httpx.
 - Лимиты: размер загрузки ≤ `MAX_DOWNLOAD_MB` (по умолчанию 15), таймаут ≤ 20 с,
   страниц PDF ≤ `MAX_PDF_PAGES`, rate limit на пользователя (напр. 10 запросов/час).
 - Содержимое источника это данные, не инструкции (**prompt injection**): в системном промпте явно
