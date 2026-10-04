@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
 _TELEGRAM_TOKEN_RE = re.compile(r"\d{6,12}:[A-Za-z0-9_-]{30,40}")
 
 
@@ -22,6 +23,9 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr
     anthropic_api_key: SecretStr
     llm_model: str = Field(min_length=1)
+    # Reasoning depth; extraction needs less than coding. None omits the parameter, which is
+    # required for models that reject it (e.g. Haiku 4.5).
+    llm_effort: Effort | None = "medium"
 
     default_lang: Literal["ru", "en", "kk"] = "ru"
 

@@ -53,6 +53,21 @@ class TooLittleTextError(BotError):
         self.minimum = minimum
 
 
+class LLMError(BotError):
+    """The language model could not produce a usable summary.
+
+    `reason` is a stable code for the user-facing message (task 1.28): "llm_busy" (rate limit or
+    overload, try again later), "llm_unreachable" (network/timeout), "llm_refused" (the model
+    declined), "llm_truncated" (answer cut off at the token limit), "llm_invalid" (the answer
+    failed validation twice), "llm_too_large" (input exceeds the model's window), "llm_config"
+    (bad key, no access to the model: the operator must act), "llm_failed" (anything else).
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class HostNotFoundError(BotError):
     """DNS resolution failed."""
 

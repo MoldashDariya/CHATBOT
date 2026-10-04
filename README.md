@@ -26,6 +26,7 @@ uv run pytest                                   # тесты
 uv run ruff check . && uv run ruff format --check .
 uv run mypy bot
 uv run pre-commit install                       # хуки перед коммитом
+uv run pytest -m live -s                        # тесты на настоящем API (тратят немного токенов)
 ```
 
 Дополнительные зависимости (по необходимости):
