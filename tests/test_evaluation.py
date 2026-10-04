@@ -281,7 +281,7 @@ async def test_saved_inputs_go_through_process_and_live_urls_through_run() -> No
     orchestrator = FakeOrchestrator()
     live = GoldenCase(id="live", url="https://x.edu/live", language="en", expected=Expected())
 
-    report = await evaluate([file_case(), live], orchestrator)  # type: ignore[arg-type]
+    report = await evaluate([file_case(), live], orchestrator, include_live=True)  # type: ignore[arg-type]
 
     assert orchestrator.processed == [
         ("https://x.edu/page", SourceFormat.HTML, "ru", "https://x.edu/page")
@@ -436,3 +436,26 @@ def test_a_trailing_slash_never_decides_whether_a_link_was_offered(expected_link
 
     summary = make_summary(useful_links=[LLMLink(title="Portal", url="https://x.edu/apply")])
     assert score_case(case(links=(expected_link,)), summary).links_found == 1
+
+
+async def test_live_cases_are_skipped_unless_asked_for_and_the_report_says_so() -> None:
+    orchestrator = FakeOrchestrator()
+    live = GoldenCase(id="live", url="https://x.edu/live", language="en", expected=Expected())
+
+    report = await evaluate([file_case(), live], orchestrator)  # type: ignore[arg-type]
+
+    assert [r.id for r in report.results] == ["f1"]
+    assert report.skipped_live == ["live"] and orchestrator.ran == []
+    assert "skipped (live pages, add --live): live" in format_report(
+        report, min_recall=0.9, max_unverified=0
+    )
+
+    with_live = await evaluate([file_case(), live], orchestrator, include_live=True)  # type: ignore[arg-type]
+    assert with_live.skipped_live == [] and orchestrator.ran == [("https://x.edu/live", "en")]
+
+
+def test_the_golden_file_has_a_live_case_for_the_users_own_page() -> None:
+    live = [c for c in load_cases() if c.file is None]
+
+    assert any("mygermanuniversity" in c.url for c in live)
+    assert all(c.expected.deadlines for c in live)

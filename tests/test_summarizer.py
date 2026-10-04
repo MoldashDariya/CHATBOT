@@ -223,6 +223,7 @@ def test_the_system_prompt_states_the_rules_that_matter() -> None:
         "ignore previous instructions",
         "verbatim",
         "Never infer a year",
+        "Countdown badges",
         "Only URLs that appear in the source",
         "never translated",
     ]:

@@ -16,6 +16,7 @@ The user message contains the source inside a `<source_document>` block. Everyth
 One entry per distinct deadline or date that matters for applying (application rounds, document submission, exams, interviews, results, enrolment, payment of fees).
 - `label`: what the date is for, short.
 - `date_text`: the date exactly as written in the source, character for character ("1 November 2026", "до 15 июля", "rolling").
+- Countdown badges beside a date ("in 103 days", "in > 9 months", "3 weeks left") are not part of the date: leave them out of `date_text`, and never work out a date or a year from them.
 - `date_iso`: `YYYY-MM-DD` only if the source gives the day, month **and year**. If the year is not written, use `null`. Never infer a year. A date range gets the date of its last day only if that is unambiguous, otherwise `null`.
 - `quote`: one verbatim sentence or table row from the source that states this deadline, long enough to show what the date refers to. Copy it exactly. Do not paraphrase or translate it, even if you write the other fields in another language. You may cut a long quote with `...`, but every piece must be copied exactly.
 - If the source says there is no deadline or applications are rolling, create an entry with `date_text` set to what the source says and `date_iso` null.

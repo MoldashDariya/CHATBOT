@@ -85,6 +85,7 @@ class CaseResult:
 @dataclass
 class Report:
     results: list[CaseResult]
+    skipped_live: list[str] = field(default_factory=list)  # ids of live cases not run
 
     @property
     def passed(self) -> int:
@@ -244,12 +245,23 @@ def _non_warning_text(summary: Summary) -> list[str]:
 
 
 async def evaluate(
-    cases: list[GoldenCase], orchestrator: Orchestrator, *, only: set[str] | None = None
+    cases: list[GoldenCase],
+    orchestrator: Orchestrator,
+    *,
+    only: set[str] | None = None,
+    include_live: bool = False,
 ) -> Report:
-    """Run the selected cases one after another (cheap on rate limits, readable in a log)."""
+    """Run the selected cases one after another (cheap on rate limits, readable in a log).
+
+    Cases without a saved file fetch a live page, so they depend on someone else's site being
+    up and unchanged; they run only with `include_live`."""
     results: list[CaseResult] = []
+    skipped_live: list[str] = []
     for case in cases:
         if only and case.id not in only:
+            continue
+        if case.file is None and not include_live:
+            skipped_live.append(case.id)
             continue
         started = time.monotonic()
         try:
@@ -259,7 +271,7 @@ async def evaluate(
             result = score_error(case, exc)
         result.seconds = round(time.monotonic() - started, 1)
         results.append(result)
-    return Report(results)
+    return Report(results, skipped_live)
 
 
 async def _run_case(case: GoldenCase, orchestrator: Orchestrator) -> Summary:
@@ -308,6 +320,8 @@ def format_report(report: Report, *, min_recall: float, max_unverified: int) -> 
         f"rate {_pct(rate)} of reported)",
         f"forbidden text hits {report.forbidden_hits}",
     ]
+    if report.skipped_live:
+        lines.append(f"skipped (live pages, add --live): {', '.join(report.skipped_live)}")
     return "\n".join(lines)
 
 
@@ -324,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--only", action="append", help="run only this case id (repeatable)")
     parser.add_argument("--min-recall", type=float, default=0.9)
     parser.add_argument("--max-unverified", type=int, default=0)
+    parser.add_argument("--live", action="store_true", help="also run cases that fetch live pages")
     parser.add_argument("--json", action="store_true", help="also save the results as JSON")
     args = parser.parse_args(argv)
 
@@ -334,7 +349,10 @@ def main(argv: list[str] | None = None) -> int:
         orchestrator = Orchestrator.from_settings(settings)
         try:
             return await evaluate(
-                load_cases(args.cases), orchestrator, only=set(args.only) if args.only else None
+                load_cases(args.cases),
+                orchestrator,
+                only=set(args.only) if args.only else None,
+                include_live=args.live,
             )
         finally:
             await orchestrator.aclose()

@@ -387,6 +387,7 @@ MESSY_INPUTS = [
     "Text.[1][2] again.[3]\nSkip to content\nShare\n" + "dup line over ten chars\n" * 3,
     ("Paragraph long enough to count as page builder duplication, " * 5 + "\n") * 3,
     "x" * 5000,
+    "Information Sуstеms and signaturе, Мoсква\nSkір to content",
     numbered_lines(200),
 ]
 

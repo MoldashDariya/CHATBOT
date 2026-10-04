@@ -43,6 +43,64 @@ _LINE_BREAKS = {
     "\x85": "\n",
 }
 
+# --- look-alike letters -------------------------------------------------------------------
+
+# Some sites swap letters for look-alikes from another alphabet ("Sуstеms" with Cyrillic у and е),
+# probably to spoil copying. Only pairs that look the same in print are listed.
+_LATIN_FOR_CYRILLIC = {
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j",
+    "ѕ": "s", "ԁ": "d", "ԛ": "q", "ԝ": "w", "һ": "h",
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C",
+    "Т": "T", "Х": "X", "І": "I", "Ј": "J", "Ѕ": "S", "У": "Y",
+}  # fmt: skip
+_CYRILLIC_FOR_LATIN = {
+    "a": "а", "e": "е", "o": "о", "p": "р", "c": "с", "y": "у", "x": "х",
+    "A": "А", "B": "В", "E": "Е", "K": "К", "M": "М", "H": "Н", "O": "О", "P": "Р", "C": "С",
+    "T": "Т", "X": "Х",
+}  # fmt: skip
+_WORD_RE = re.compile(r"[^\W\d_]+")
+_CYRILLIC_RE = re.compile("[\u0400-\u04ff]")
+_LATIN_RE = re.compile("[A-Za-z\u00c0-\u024f]")
+
+
+def fold_look_alikes(text: str) -> tuple[str, int]:
+    """Repair words that mix Latin and Cyrillic letters. Returns (text, words repaired).
+
+    A word is repaired only if one alphabet dominates it (on a tie, the alphabet that dominates
+    the whole text) and every letter of the other alphabet has a look-alike in the dominant one;
+    anything else (a Latin brand glued to a Russian ending, a tie in a mixed text) is left
+    alone. Ordinary text in either alphabet is never touched.
+    """
+    repaired = 0
+    document_latin = len(_LATIN_RE.findall(text))
+    document_cyrillic = len(_CYRILLIC_RE.findall(text))
+
+    def fix(match: re.Match[str]) -> str:
+        nonlocal repaired
+        word = match.group()
+        if not (_CYRILLIC_RE.search(word) and _LATIN_RE.search(word)):
+            return word
+        cyrillic = len(_CYRILLIC_RE.findall(word))
+        latin = len(_LATIN_RE.findall(word))
+        if cyrillic == latin:
+            # "Skір" is two and two: let the rest of the text decide, if it leans one way.
+            if document_latin == document_cyrillic:
+                return word
+            latin_wins = document_latin > document_cyrillic
+        else:
+            latin_wins = latin > cyrillic
+        table, minority = (
+            (_LATIN_FOR_CYRILLIC, _CYRILLIC_RE) if latin_wins else (_CYRILLIC_FOR_LATIN, _LATIN_RE)
+        )
+        letters = [ch for ch in word if minority.match(ch)]
+        if any(ch not in table for ch in letters):
+            return word
+        repaired += 1
+        return "".join(table.get(ch, ch) if minority.match(ch) else ch for ch in word)
+
+    return _WORD_RE.sub(fix, text), repaired
+
+
 # --- structure ----------------------------------------------------------------------------
 
 _STRUCTURAL_RE = re.compile(r"^\s*(?:[|#>]|[-*•–]\s|\d{1,3}[.)]\s)")
@@ -101,7 +159,9 @@ def clean_content(content: ExtractedContent, max_chars: int) -> ExtractedContent
     """
     is_html = content.source_format is SourceFormat.HTML
 
-    lines = _normalize_characters(content.text).split("\n")
+    normalized, repaired_text = fold_look_alikes(_normalize_characters(content.text))
+    title, repaired_title = fold_look_alikes(content.title) if content.title else (None, 0)
+    lines = normalized.split("\n")
     if is_html:
         lines = _join_indented_continuations(lines)
     lines = [" ".join(line.split()) for line in lines]
@@ -112,12 +172,14 @@ def clean_content(content: ExtractedContent, max_chars: int) -> ExtractedContent
 
     text = _collapse_blank_lines(lines)
     meta = dict(content.meta)
+    if repaired_text + repaired_title:
+        meta["lookalike_words_repaired"] = str(repaired_text + repaired_title)
     if len(text) > max_chars:
         meta.update(truncated="true", original_chars=str(len(text)))
         text = _truncate(text, max_chars)
 
     links = tuple(link for link in content.links if _url_occurs(link, text))
-    return replace(content, text=text, links=links, meta=meta)
+    return replace(content, text=text, title=title, links=links, meta=meta)
 
 
 def ensure_enough_text(content: ExtractedContent, min_chars: int = MIN_TEXT_CHARS) -> None:

@@ -30,6 +30,11 @@ _MAIN_AREA_MIN_CHARS = 200
 _BARE_AMPERSAND_RE = re.compile(rb"&(?![A-Za-z0-9#]{1,32};)")
 _UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
 
+# Elements whose contents are left exactly as they are when separating glued neighbours.
+_VERBATIM_TAGS = frozenset({"pre", "code", "script", "style", "textarea"})
+_MAX_SIBLING_CHILDREN = 8  # glue happens between small inline widgets, not page-sized blocks
+_SEPARATION_BUDGET_CHARS = 5_000_000  # a hostile deep page must not make this quadratic
+
 _WEB_SCHEMES = ("http", "https")
 _NON_WEB_PREFIXES = ("javascript:", "mailto:", "tel:", "data:", "sms:")
 
@@ -54,6 +59,7 @@ class HtmlExtractor:
             known_urls: set[str] = set()
             if tree is not None:
                 known_urls = prepare_links(tree, source.url)
+                separate_glued_elements(tree)
             document = tree if tree is not None else body
 
             text = restore_urls(self._main_text(document, source.url), known_urls)
@@ -162,6 +168,56 @@ def prepare_links(tree: HtmlElement, page_url: str) -> set[str]:
         anchor.set("href", absolute)
         urls.add(absolute)
     return urls
+
+
+def separate_glued_elements(tree: HtmlElement) -> int:
+    """Put a space between neighbouring elements whose texts would otherwise run together.
+
+    Pages put badges and labels next to values with no whitespace in the markup and let CSS
+    space them: `<strong>15 July</strong><span>in 9 months</span>`. A browser shows two
+    things, a text extractor reads "15 Julyin 9 months". Only element-to-element boundaries
+    and text-to-`span` boundaries are touched, never `Sys<b>tem</b>` (styling inside a word)
+    and never `<pre>`/`<code>`. Returns how many gaps were opened.
+    """
+    opened = 0
+    budget = _SEPARATION_BUDGET_CHARS
+    verbatim = {inner for tag in _VERBATIM_TAGS for node in tree.iter(tag) for inner in node.iter()}
+    for element in tree.iter():
+        if not isinstance(element.tag, str):
+            continue
+        following = element.getnext()
+        if (
+            following is None
+            or not isinstance(following.tag, str)
+            or following in verbatim
+            or element.tail
+            or len(element) > _MAX_SIBLING_CHILDREN
+            or len(following) > _MAX_SIBLING_CHILDREN
+        ):
+            continue
+        left, right = "".join(element.itertext()), "".join(following.itertext())
+        budget -= len(left) + len(right)
+        if budget < 0:
+            break
+        if left and right and left[-1].isalnum() and right[0].isalnum():
+            element.tail = " "
+            opened += 1
+
+    # Text immediately followed by a <span> widget: "15 July<span>in 9 months</span>".
+    for span in tree.iter("span"):
+        previous = span.getprevious()
+        holder = span.getparent()
+        if holder is None or span in verbatim or len(span) > _MAX_SIBLING_CHILDREN:
+            continue
+        preceding = previous.tail if previous is not None else holder.text
+        text = "".join(span.itertext())
+        if preceding and text and preceding[-1].isalnum() and text[0].isalnum():
+            if previous is not None:
+                previous.tail = f"{preceding} "
+            else:
+                holder.text = f"{preceding} "
+            opened += 1
+    return opened
 
 
 def _document_base(tree: HtmlElement, page_url: str) -> str:

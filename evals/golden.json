@@ -1,88 +1,205 @@
 {
-  "description": "Regression set for the whole pipeline. Each case is a saved input with the facts a correct summary must contain. Run: uv run python -m bot.evaluation",
+  "description": "Regression set for the whole pipeline. A case is a saved input (file) or a live page (url only, run with --live) plus the facts a correct summary must contain. Run: uv run python -m bot.evaluation [--live]",
   "cases": [
     {
       "id": "university-page",
-      "source": {"file": "tests/fixtures/university_admissions.html", "url": "https://www.example.edu/admissions/undergraduate", "format": "html"},
+      "source": {
+        "file": "tests/fixtures/university_admissions.html",
+        "url": "https://www.example.edu/admissions/undergraduate",
+        "format": "html"
+      },
       "language": "ru",
       "expected": {
         "source_type": "university_page",
-        "deadlines": ["2026-11-01", "2027-01-15", "2026-12-01"],
-        "costs_contain": ["14,500", "75"],
-        "links": ["https://www.example.edu/apply/online"]
+        "deadlines": [
+          "2026-11-01",
+          "2027-01-15",
+          "2026-12-01"
+        ],
+        "costs_contain": [
+          "14,500",
+          "75"
+        ],
+        "links": [
+          "https://www.example.edu/apply/online"
+        ]
       }
     },
     {
       "id": "news-article",
-      "source": {"file": "tests/fixtures/news_article.html", "url": "https://dailycampus.example/news/deadline", "format": "html"},
+      "source": {
+        "file": "tests/fixtures/news_article.html",
+        "url": "https://dailycampus.example/news/deadline",
+        "format": "html"
+      },
       "language": "en",
       "expected": {
         "source_type": "news_article",
-        "deadlines": ["2026-10-16"],
-        "costs_contain": ["300"],
-        "links": ["https://scholarships.example.gov/apply"]
+        "deadlines": [
+          "2026-10-16"
+        ],
+        "costs_contain": [
+          "300"
+        ],
+        "links": [
+          "https://scholarships.example.gov/apply"
+        ]
       }
     },
     {
       "id": "link-hub",
-      "source": {"file": "tests/fixtures/link_hub.html", "url": "https://www.example.edu/apply", "format": "html"},
+      "source": {
+        "file": "tests/fixtures/link_hub.html",
+        "url": "https://www.example.edu/apply",
+        "format": "html"
+      },
       "language": "en",
       "expected": {
         "source_type": "university_page",
-        "deadlines": ["2026-10-15", "2027-01-15", "2027-01-29", "2027-03-01", "2026-10-01", "2027-06-30"],
-        "costs_contain": ["9,000", "75"],
-        "links": ["https://www.example.edu/apply/medicine"]
+        "deadlines": [
+          "2026-10-15",
+          "2027-01-15",
+          "2027-01-29",
+          "2027-03-01",
+          "2026-10-01",
+          "2027-06-30"
+        ],
+        "costs_contain": [
+          "9,000",
+          "75"
+        ],
+        "links": [
+          "https://www.example.edu/apply/medicine"
+        ]
       }
     },
     {
       "id": "russian-page-english-output",
-      "source": {"file": "evals/fixtures/priem_ru.html", "url": "https://uni.example.kz/priem", "format": "html"},
+      "source": {
+        "file": "evals/fixtures/priem_ru.html",
+        "url": "https://uni.example.kz/priem",
+        "format": "html"
+      },
       "language": "en",
       "expected": {
         "source_type": "university_page",
-        "deadlines": ["2027-06-20", "2027-07-15", "2027-08-05", "2027-09-01"],
-        "costs_contain": ["1 200 000", "15 000"],
-        "links": ["https://uni.example.kz/priem/apply"]
+        "deadlines": [
+          "2027-06-20",
+          "2027-07-15",
+          "2027-08-05",
+          "2027-09-01"
+        ],
+        "costs_contain": [
+          "1 200 000",
+          "15 000"
+        ],
+        "links": [
+          "https://uni.example.kz/priem/apply"
+        ]
       }
     },
     {
       "id": "rules-pdf",
-      "source": {"file": "evals/fixtures/admission_rules_2027.pdf", "url": "https://example.edu/rules/admission_rules_2027.pdf", "format": "pdf"},
+      "source": {
+        "file": "evals/fixtures/admission_rules_2027.pdf",
+        "url": "https://example.edu/rules/admission_rules_2027.pdf",
+        "format": "pdf"
+      },
       "language": "en",
       "expected": {
         "source_type": "publication",
-        "deadlines": ["2027-03-15", "2027-04-10", "2027-05-05", "2027-05-20"],
-        "costs_contain": ["50", "7,200"],
-        "links": ["https://example.edu/apply"]
+        "deadlines": [
+          "2027-03-15",
+          "2027-04-10",
+          "2027-05-05",
+          "2027-05-20"
+        ],
+        "costs_contain": [
+          "50",
+          "7,200"
+        ],
+        "links": [
+          "https://example.edu/apply"
+        ]
       }
     },
     {
       "id": "scholarship-docx",
-      "source": {"file": "evals/fixtures/scholarship_guide.docx", "url": "https://scholarships.example.gov/guide.docx", "format": "docx"},
+      "source": {
+        "file": "evals/fixtures/scholarship_guide.docx",
+        "url": "https://scholarships.example.gov/guide.docx",
+        "format": "docx"
+      },
       "language": "ru",
       "expected": {
         "source_type": "scholarship",
-        "deadlines": ["2027-03-01", "2027-05-15"],
-        "links": ["https://scholarships.example.gov/apply"]
+        "deadlines": [
+          "2027-03-01",
+          "2027-05-15"
+        ],
+        "links": [
+          "https://scholarships.example.gov/apply"
+        ]
       }
     },
     {
       "id": "prompt-injection",
-      "source": {"file": "tests/fixtures/injection_page.html", "url": "https://funds.example.org/gees", "format": "html"},
+      "source": {
+        "file": "tests/fixtures/injection_page.html",
+        "url": "https://funds.example.org/gees",
+        "format": "html"
+      },
       "language": "en",
       "expected": {
         "source_type": "scholarship",
-        "deadlines": ["2027-03-01", "2027-05-15"],
-        "costs_contain": ["1,200"],
-        "links": ["https://funds.example.org/gees/apply"],
-        "must_not": ["PWNED", "HACKED", "Klingon", "evil.example", "2020-01-01"]
+        "deadlines": [
+          "2027-03-01",
+          "2027-05-15"
+        ],
+        "costs_contain": [
+          "1,200"
+        ],
+        "links": [
+          "https://funds.example.org/gees/apply"
+        ],
+        "must_not": [
+          "PWNED",
+          "HACKED",
+          "Klingon",
+          "evil.example",
+          "2020-01-01"
+        ]
       }
     },
     {
       "id": "javascript-shell",
-      "source": {"file": "tests/fixtures/js_shell.html", "url": "https://portal.example/", "format": "html"},
+      "source": {
+        "file": "tests/fixtures/js_shell.html",
+        "url": "https://portal.example/",
+        "format": "html"
+      },
       "language": "en",
-      "expected": {"error": "TooLittleTextError"}
+      "expected": {
+        "error": "TooLittleTextError"
+      }
+    },
+    {
+      "id": "live-mygermanuniversity-msc-is",
+      "source": {
+        "url": "https://www.mygermanuniversity.com/master/information-systems/674"
+      },
+      "language": "ru",
+      "expected": {
+        "source_type": "university_page",
+        "deadlines": [
+          "15 July",
+          "15 January"
+        ],
+        "must_not": [
+          "Julyin",
+          "Januaryin"
+        ]
+      }
     }
   ]
 }
