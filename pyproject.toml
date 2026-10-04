@@ -53,6 +53,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106"]
+"bot/render/texts.py" = ["E501"]  # translation tables: one message per line reads best
 
 [tool.mypy]
 python_version = "3.12"
