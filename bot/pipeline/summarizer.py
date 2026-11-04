@@ -1,6 +1,6 @@
 """Cleaned text in, verified `Summary` out: one Claude call with a JSON schema, then code checks.
 
-Design notes (see ARCHITECTURE.md, "Работа с LLM"):
+Design notes (see ARCHITECTURE.md, "Working with the LLM"):
 - Structured output via `output_config.format`, not forced tool use (newer models reject a forced
   `tool_choice`). No `temperature`/`thinking`: current models reject sampling parameters and run
   adaptive thinking on their own; `LLM_EFFORT` sets how hard they think.

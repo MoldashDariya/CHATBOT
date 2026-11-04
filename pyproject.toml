@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Fallbacks, installed only when needed (see ARCHITECTURE.md "Стек и зависимости").
+# Fallbacks, installed only when needed (see ARCHITECTURE.md "Stack and dependencies").
 browser = ["playwright>=1.48"]
 youtube-fallback = ["yt-dlp>=2024.10.0"]
 

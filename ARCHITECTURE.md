@@ -1,420 +1,434 @@
 # Admissions Link Summarizer Bot
 
-Telegram AI-бот. Пользователь отправляет ссылку или файл. Бот определяет тип источника,
-извлекает основной текст, очищает его от шума и возвращает структурированное саммари
-для поступления: дедлайны, требования, кто может подать заявку, стоимость, полезные ссылки
-и обязательно ссылку на источник.
+An AI-powered Telegram bot. The user sends a link or a file. The bot detects the source type,
+extracts the main text, cleans it of noise and returns a structured summary for applicants:
+deadlines, requirements, who can apply, costs, useful links and, always, a link to the source.
 
-## Правила работы над проектом
-- Перед изменениями кода читай `TASKS.md`. Работай по одной задаче за раз.
-- Завершив задачу, отметь её `[x]` в `TASKS.md`. Не отмечай, пока тесты не проходят.
-- Не добавляй зависимости, не описанные в этом файле, без согласования.
-- Не выдумывай данные в саммари (см. «Анти-галлюцинации»). Это главный критерий качества.
-- Секреты только в `.env`, никогда не коммить. Поддерживай `.env.example`.
-- Ответы пользователю и комментарии для пользователя пишутся на языке пользователя.
-  Код, имена, логи и комментарии в коде пишутся на английском.
+## Project working rules
+- Read `TASKS.md` before changing code. Work on one task at a time.
+- When a task is finished, mark it `[x]` in `TASKS.md`. Do not mark it until the tests pass.
+- Do not add dependencies that are not described in this file without agreeing on it first.
+- Never invent data in a summary (see "Anti-hallucination"). This is the main quality criterion.
+- Secrets live only in `.env` and are never committed. Keep `.env.example` up to date.
+- Replies and user-facing texts are written in the user's language.
+  Code, names, logs and code comments are written in English.
 
-## Пользовательский сценарий
-1. Пользователь шлёт URL (или PDF/DOCX файлом).
-2. Бот отвечает «Читаю страницу…» (статус-сообщение, потом редактируется).
-3. Бот определяет тип источника (см. ниже).
-4. Достаёт текст и чистит его.
-5. LLM извлекает структурированные поля.
-6. Бот присылает карточку-таблицу + ссылку на источник.
+## User flow
+1. The user sends a URL (or a PDF/DOCX file).
+2. The bot replies "Reading the page…" (a status message that is edited later).
+3. The bot detects the source type (see below).
+4. It extracts the text and cleans it.
+5. The LLM extracts structured fields.
+6. The bot sends a summary card plus a link to the source.
 
-## Связанные страницы (глубина 1)
-`pipeline/followups.py` + `Orchestrator.process(follow=True)`; включается `FOLLOW_LINKED_PAGES`
-(по умолчанию 2, `0` выключает). Страница программы часто пишет «сроки и требования на странице
-заявки»; без этого бот честно отвечал «дедлайны не указаны», хотя ссылка на нужную страницу была.
-- **Когда**: только для HTML по ссылке пользователя (не для файлов, видео, PDF и сохранённых
-  входов оценщика) и только если в первом ответе нет ни одного подтверждённого текстом дедлайна и
-  страница не `other`. Если дедлайны уже найдены, лишних запросов нет.
-- **Какие страницы**: только того же сайта (`registrable_domain`: `sc.informatik.rwth-aachen.de` и
-  `www.rwth-aachen.de` один сайт), ссылки с «словами приёма» в тексте ссылки (вес 2) или адресе
-  (apply, application, admission, deadline, requirements, bewerb…, поступл…, подач…, заявк…,
-  срок…; совпадение по **началу слова**, иначе «up**dates**» и «can**dates**» попадали бы),
-  лучшие первыми, не больше `FOLLOW_LINKED_PAGES`, без картинок/архивов, без самой страницы.
-  Дальше глубины 1 не идём: ссылки на связанных страницах не читаются.
-- **Безопасность**: те же `SafeFetcher`, SSRF-защита, лимиты и общий таймаут; имя сайта, указывающее
-  внутрь сети, не запрашивается. Связанные страницы это такие же недоверенные данные.
-- **Как**: тексты склеиваются (`combine`): страница пользователя, затем каждая связанная под
-  строкой `=== Linked page: URL ===` (в системном промпте описано, как с ними обращаться), и
-  модель вызывается второй раз. Новый ответ берётся, только если подтверждённых дедлайнов в нём
-  **больше**; иначе остаётся первый. Любой сбой (страница недоступна/пустая, второй вызов упал)
-  не портит ответ: связанные страницы это бонус, а не причина для ошибки.
-- **Карточка**: строка «📎 Дополнительно прочитано» со ссылками на эти страницы стоит перед
-  источником (`Summary.extra_sources`); «Источник» по-прежнему ссылка пользователя и последняя
-  строка. Статус «🔎 Проверяю связанные страницы…».
-- Цена: до двух запросов и второй вызов модели, только на страницах, где сроки не нашлись.
+## Linked pages (depth 1)
+`pipeline/followups.py` + `Orchestrator.process(follow=True)`; enabled by `FOLLOW_LINKED_PAGES`
+(2 by default, `0` disables it). A program page often says "see the application page for deadlines
+and requirements"; without this feature the bot honestly answered "no deadlines stated" even though
+the link to the right page was there.
+- **When**: only for HTML from a user's link (not for files, videos, PDFs or stored evaluation
+  inputs), and only if the first answer has no deadline confirmed by the text and the page is not
+  `other`. If deadlines were already found, no extra requests are made.
+- **Which pages**: only on the same site (`registrable_domain`: `sc.informatik.rwth-aachen.de` and
+  `www.rwth-aachen.de` count as one site), links with "admission words" in the link text (weight 2)
+  or in the address (apply, application, admission, deadline, requirements, bewerb…, поступл…,
+  подач…, заявк…, срок…; matched at the **start of a word**, otherwise "up**dates**" and
+  "can**dates**" would match), best first, at most `FOLLOW_LINKED_PAGES`, no images/archives, not the
+  page itself. We never go deeper than 1: links on linked pages are not read.
+- **Security**: the same `SafeFetcher`, SSRF protection, limits and overall timeout; a host name that
+  points inside the network is never requested. Linked pages are untrusted data just like the
+  original page.
+- **How**: the texts are joined (`combine`): the user's page, then each linked page under a
+  `=== Linked page: URL ===` line (the system prompt explains how to treat them), and the model is
+  called a second time. The new answer is used only if it has **more** confirmed deadlines;
+  otherwise the first answer stays. Any failure (page unavailable/empty, second call failed) does
+  not spoil the answer: linked pages are a bonus, not a reason for an error.
+- **Card**: an "📎 Also read" line with links to these pages comes before the source
+  (`Summary.extra_sources`); "Source" is still the user's link and the last line. Status message:
+  "🔎 Checking linked pages…".
+- Cost: up to two requests and a second model call, only on pages where no deadlines were found.
 
-## Файлы, присланные в чат (PDF, DOCX)
-`handlers/document.py` + `Orchestrator.run_file`. Тот же путь, что у ссылки, минус скачивание:
-тот же лимит запросов в час, тот же общий таймаут и очередь, формат решают **байты**, а не имя и
-не заявленный mime (HTML-файл под именем `.pdf` читается как HTML; `.doc` отклоняется по имени
-до чтения, остальные не-PDF/DOCX/HTML по содержимому).
-- Размер: если Telegram заявил больше `MAX_DOWNLOAD_MB`, файл даже не скачивается; если размер не
-  заявлен или он оказался больше после скачивания, оркестратор проверяет по факту. Telegram отдаёт ботам
-  файлы только до 20 МБ.
-- Скачивание: таймаут 60 с; «file is too big» → сообщение про размер, остальные сбои Telegram →
-  нейтральное «не удалось скачать файл» (`DownloadFailedError`).
-- **Имя файла выбирает отправитель, поэтому оно никогда не попадает в промпт.** Модель и
-  экстракторы видят фиксированный адрес `telegram://uploaded-file`; в карточке строка «Источник»
-  показывает очищенное имя (только печатные символы, одна строка, до 120 знаков), вставляется как
-  `<code>` и экранируется.
-- Фото, голосовые, видео, стикеры: подсказка, что бот читает.
+## Files sent in the chat (PDF, DOCX)
+`handlers/document.py` + `Orchestrator.run_file`. The same path as a link, minus the download: the
+same hourly request limit, the same overall timeout and queue; the format is decided by the
+**bytes**, not by the file name or the declared mime type (an HTML file named `.pdf` is read as
+HTML; `.doc` is rejected by name before reading, other non-PDF/DOCX/HTML files by content).
+- Size: if Telegram reports more than `MAX_DOWNLOAD_MB`, the file is not even downloaded; if the size
+  is not reported or turns out larger after the download, the orchestrator checks the actual size.
+  Telegram only lets bots download files up to 20 MB.
+- Download: 60 s timeout; "file is too big" → a message about the size, other Telegram failures →
+  a neutral "could not download the file" (`DownloadFailedError`).
+- **The file name is chosen by the sender, so it never goes into the prompt.** The model and the
+  extractors see a fixed address `telegram://uploaded-file`; the card's "Source" line shows the
+  sanitised name (printable characters only, one line, up to 120 characters), inserted as `<code>`
+  and escaped.
+- Photos, voice messages, videos, stickers: a hint about what the bot can read.
 
-## Типы источников и определение
-Порядок определения (дешёвое → дорогое):
-1. **YouTube**: домены `youtube.com`, `youtu.be`, `m.youtube.com`, `/shorts/`. Берём субтитры.
-2. **PDF**: расширение `.pdf` или `Content-Type: application/pdf` (проверить HEAD/первые байты `%PDF`).
-3. **DOCX**: расширение `.docx`, Content-Type `wordprocessingml`, или файл, отправленный в Telegram.
-   `.doc` (старый формат) не поддерживается: вежливо отказать и попросить PDF/DOCX.
-4. **HTML**: всё остальное. Дальше LLM-классификатор по очищенному тексту:
+## Source types and detection
+Detection order (cheap → expensive):
+1. **YouTube**: domains `youtube.com`, `youtu.be`, `m.youtube.com`, `/shorts/`. We use the subtitles.
+2. **PDF**: `.pdf` extension or `Content-Type: application/pdf` (check HEAD / first bytes `%PDF`).
+3. **DOCX**: `.docx` extension, `wordprocessingml` Content-Type, or a file sent in Telegram.
+   `.doc` (the old format) is not supported: politely decline and ask for PDF/DOCX.
+4. **HTML**: everything else. Then an LLM classifier on the cleaned text:
    `university_page | scholarship | news_article | publication | general_site | other`.
 
-Два разных понятия, не путать: **формат** (`SourceFormat`: youtube/pdf/docx/html, определяет
-`pipeline/detector.py`, нужен экстракторам) и **класс** (`Summary.source_type`: university_page,
-scholarship... определяется позже по тексту HTML-страницы).
+Two different concepts, not to be confused: the **format** (`SourceFormat`: youtube/pdf/docx/html,
+decided by `pipeline/detector.py`, needed by the extractors) and the **class**
+(`Summary.source_type`: university_page, scholarship... decided later from the text of the HTML page).
 
-Правила детектора:
-- `detect_from_url`: только то, что не требует скачивания: видео YouTube (нужен 11-символьный id;
-  канал/плейлист/поиск отклоняются) и старый `.doc` (отказ до скачивания).
-- Итог решают **байты ответа** (`detect_from_content`), а не расширение URL и не `Content-Type`:
-  `%PDF-` в начале (допускается мусор в первом КиБ, только если сервер сам сказал `application/pdf`),
-  zip с `word/document.xml` = DOCX, OLE-сигнатура = старый Office (отказ), иначе HTML по
-  Content-Type или по разметке в начале. Остальное (картинки, JSON, xlsx, архивы) = не поддерживается.
-- Ссылка на `.pdf`, вернувшая HTML (страница ошибки/логина), обрабатывается как HTML.
-- После скачивания смотреть **итоговый** URL (после редиректов): `detect_response`.
+Detector rules:
+- `detect_from_url`: only what needs no download: YouTube videos (an 11-character id is required;
+  channels/playlists/search are rejected) and the old `.doc` (rejected before download).
+- The result is decided by the **response bytes** (`detect_from_content`), not by the URL extension
+  or the `Content-Type`: `%PDF-` at the start (junk in the first KiB is allowed only if the server
+  itself said `application/pdf`), a zip with `word/document.xml` = DOCX, an OLE signature = old
+  Office (rejected), otherwise HTML by Content-Type or by markup at the start. Everything else
+  (images, JSON, xlsx, archives) = not supported.
+- A link to a `.pdf` that returned HTML (an error/login page) is processed as HTML.
+- After the download, look at the **final** URL (after redirects): `detect_response`.
 
-Класс источника влияет на промпт извлечения (у стипендии акцент на eligibility/сумму,
-у университета на программы и стоимость, у новости на дату публикации и первоисточник).
+The source class affects the extraction prompt (for a scholarship the focus is eligibility/amount,
+for a university it is programs and costs, for news it is the publication date and the original
+source).
 
-## Архитектура
+## Architecture
 ```
 bot/
-  main.py                # запуск aiogram, регистрация роутеров
-  config.py              # pydantic-settings, чтение .env (токен проверяется по формату)
-  log.py                 # настройка логирования
-  errors.py              # доменные исключения (BotError и наследники)
-  messages.py            # тексты для пользователя (RU)
-  urls.py                # поиск URL в тексте сообщения
+  main.py                # aiogram startup, router registration
+  config.py              # pydantic-settings, reads .env (the token format is validated)
+  log.py                 # logging setup
+  errors.py              # domain exceptions (BotError and subclasses)
+  messages.py            # user-facing texts (RU)
+  urls.py                # finding URLs in message text
   handlers/
     start.py             # /start, /help, /lang
-    link.py              # обработка URL в тексте, rate limit
-    status.py            # статус-сообщение, редактируемое по этапам
-    flow.py              # общее для ссылок и файлов: лимит, прогресс, карточка или ошибка
-    document.py          # обработка присланных PDF/DOCX
-    refresh.py           # кнопка «🔄 Обновить» под карточкой
+    link.py              # handling URLs in text, rate limit
+    status.py            # status message edited stage by stage
+    flow.py              # shared by links and files: limit, progress, card or error
+    document.py          # handling uploaded PDF/DOCX
+    refresh.py           # the "🔄 Обновить" (Refresh) button under a card
   pipeline/
-    orchestrator.py      # detect → fetch → extract → clean → summarize; этапы, лимит параллельных задач, общий таймаут
-    detector.py          # определение типа источника
-    cleaner.py           # чистка текста, дедупликация, обрезка по токенам
-    followups.py         # какие связанные страницы читать (тот же сайт, про заявку) и как склеить тексты
-    summarizer.py        # вызов Claude, structured output, повтор, сборка Summary
-    schema.py            # LLMSummary (ответ модели) и Summary (после проверок)
-    verify.py            # сверка цитат/дат/ссылок с текстом, вырезание URL из warnings
+    orchestrator.py      # detect → fetch → extract → clean → summarize; stages, concurrency limit, overall timeout
+    detector.py          # source type detection
+    cleaner.py           # text cleaning, deduplication, trimming to the token budget
+    followups.py         # which linked pages to read (same site, about applying) and how to join the texts
+    summarizer.py        # Claude call, structured output, retry, building the Summary
+    schema.py            # LLMSummary (model answer) and Summary (after checks)
+    verify.py            # checking quotes/dates/links against the text, stripping URLs from warnings
   extractors/
-    base.py              # интерфейс Extractor -> ExtractedContent
-    html.py              # trafilatura + подготовка ссылок; fallback: main_area, затем playwright (2.3)
-    main_area.py         # текст основной области страницы прямо из DOM (для страниц из ссылок)
+    base.py              # Extractor interface -> ExtractedContent
+    html.py              # trafilatura + link preparation; fallback: main_area, then playwright (2.3)
+    main_area.py         # text of the page's main area straight from the DOM (for link-heavy pages)
     pdf.py               # pdfplumber/pypdf
     docx.py              # python-docx
     youtube.py           # youtube-transcript-api / yt-dlp
   render/
-    telegram.py          # карточка → HTML для Telegram, разбиение >4096 символов
-    texts.py             # тексты карточки и ошибок: ru, en, kk
-    errors.py            # исключение → сообщение пользователю + уровень лога
+    telegram.py          # card → HTML for Telegram, splitting >4096 characters
+    texts.py             # card and error texts: ru, en, kk
+    errors.py            # exception → user message + log level
   security/
-    url_guard.py         # SSRF-защита, валидация URL
-    safe_fetch.py        # HTTP GET: guard на каждом редиректе, лимит размера, общий таймаут
-    limits.py            # rate limit на пользователя (скользящее окно, в памяти)
+    url_guard.py         # SSRF protection, URL validation
+    safe_fetch.py        # HTTP GET: guard on every redirect, size limit, overall timeout
+    limits.py            # per-user rate limit (sliding window, in memory)
   storage/
-    cache.py             # SQLite: готовые ответы по нормализованному URL, языку и хэшу контента
+    cache.py             # SQLite: finished answers by normalised URL, language and content hash
   prompts/
-    system.md            # единый системный промпт (правила, классы источников, язык)
-evaluation.py            # оценка качества на golden-наборе: python -m bot.evaluation
+    system.md            # single system prompt (rules, source classes, language)
+evaluation.py            # quality evaluation on the golden set: python -m bot.evaluation
 evals/
-  golden.json            # эталонные случаи: вход + ожидаемые факты
-  fixtures/              # сохранённые входы (PDF, DOCX, HTML)
+  golden.json            # reference cases: input + expected facts
+  fixtures/              # stored inputs (PDF, DOCX, HTML)
 tests/
-  fixtures/              # сохранённые HTML/PDF/DOCX и транскрипты
+  fixtures/              # stored HTML/PDF/DOCX and transcripts
 ```
 
-### Ключевой контракт
+### Key contract
 `async Extractor.extract(RawSource(url, body, content_type)) -> ExtractedContent(text, title,
-source_url, source_format, links, meta)` (`extractors/base.py`). Все extractors возвращают единый
-формат, оркестратор берёт их из `build_extractors(settings, fetcher)` по `SourceFormat`.
-- `RawSource.url` это **итоговый** URL после редиректов (база для относительных ссылок);
-  у YouTube `body` пуст, экстрактор сам ходит за данными. Парсинг идёт в `asyncio.to_thread`.
-- `links` это абсолютные http(s)-ссылки, **реально присутствующие** в источнике (только из
-  основного содержимого, не из меню/футера). Саммари вправе предлагать только их (контрактный
-  тест: каждая ссылка встречается в `text`).
-- `meta`: только непустые строки: `canonical_url` (если отличается от скачанного), `published`, `site_name`, `author`,
-  `description` (HTML),
-  `pages_total`/`pages_read` (PDF), `kind=video`, `channel`, `transcript_language`,
-  `transcript_kind` (YouTube). Если `pages_read < pages_total`, оркестратор обязан добавить
-  warning о частичном чтении.
-- Исключения: `ExtractionError(reason)`, где reason: `scanned_pdf`, `encrypted_pdf`, `corrupt`,
-  `unsafe_archive`, `timeout`, `no_transcript`, `video_unavailable`, `youtube_blocked`,
-  `youtube_failed`. Текст ошибки для пользователя строится по reason (задача 1.28).
+source_url, source_format, links, meta)` (`extractors/base.py`). All extractors return the same
+format; the orchestrator gets them from `build_extractors(settings, fetcher)` by `SourceFormat`.
+- `RawSource.url` is the **final** URL after redirects (the base for relative links); for YouTube
+  `body` is empty and the extractor fetches the data itself. Parsing runs in `asyncio.to_thread`.
+- `links` are absolute http(s) links **actually present** in the source (only from the main content,
+  not from menus/footers). The summary may only suggest these (contract test: every link appears in
+  `text`).
+- `meta`: non-empty strings only: `canonical_url` (if it differs from the downloaded one),
+  `published`, `site_name`, `author`, `description` (HTML), `pages_total`/`pages_read` (PDF),
+  `kind=video`, `channel`, `transcript_language`, `transcript_kind` (YouTube). If
+  `pages_read < pages_total`, the orchestrator must add a warning about partial reading.
+- Exceptions: `ExtractionError(reason)`, where reason is one of `scanned_pdf`, `encrypted_pdf`,
+  `corrupt`, `unsafe_archive`, `timeout`, `no_transcript`, `video_unavailable`, `youtube_blocked`,
+  `youtube_failed`. The user-facing error text is built from the reason (task 1.28).
 
-Особенности экстракторов:
-- **HTML**: перед trafilatura DOM готовится: все ссылки становятся абсолютными с учётом
-  `<base>` и адреса страницы (сама trafilatura резолвит от корня сайта, превращает `//cdn` в
-  http и т.п.), ссылки внутри страницы (`#frag`, сноски) разворачиваются в текст, голые `&` в
-  разметке экранируются, а после извлечения URL с параметрами вроде `&section=`/`&region=`
-  восстанавливаются (иначе `html.unescape` в trafilatura превращает их в `§ion=`/`®ion=`).
-  trafilatura считает блоки почти из одних ссылок навигацией и отбрасывает их, а на страницах
-  вроде руководства по финансированию или хаба приёма это и есть содержимое (на GOV.UK терялось
-  58 из 60 пунктов списков). Поэтому, если страница объявляет основную область (`<main>`,
-  `role=main`, `<article>`), `extractors/main_area.py` читает её прямо из DOM (порядок, заголовки,
-  пункты списков, таблицы, ссылки; без nav/header/footer/aside/форм/скрытого/cookie-виджетов), и
-  этот текст берётся, когда он больше текста trafilatura в 1.5 раза (`meta.text_source=main_area`).
-  Обычные статьи остаются на trafilatura.
-  Соседние элементы без пробела в разметке (`<strong>15 July</strong><span class="badge">in 9
-  months</span>`: браузер разводит их стилями, а экстрактор читал «15 Julyin 9 months»)
-  разделяются пробелом (`separate_glued_elements`): только граница элемент-элемент и текст-`span`
-  при буквах/цифрах по обе стороны, никогда `Sys<b>tem</b>`, `<pre>`, `<code>`, верхние и нижние
-  индексы (`15<sup>th</sup>`, `H<sub>2</sub>O`, в том числе в обёртке `<b><sup>st</sup></b>`) и
-  порядковые суффиксы `st/nd/rd/th` после цифры: иначе «March 1st» стало бы «March 1 st» и дедлайн
-  перестал бы совпадать с источником.
-  Таблицы как `| a | b |`, ссылки как `[текст](url)`; если вышло <500 знаков,
-  второй проход с `favor_recall`. Короткий результат НЕ ошибка здесь: решение «слишком мало
-  текста» принимает cleaner (1.17). JS-страницы (DAAD, Stanford дали 300-700 знаков) закроет
+Extractor details:
+- **HTML**: the DOM is prepared before trafilatura: all links are made absolute, taking `<base>` and
+  the page address into account (trafilatura itself resolves from the site root, turns `//cdn` into
+  http and so on), in-page links (`#frag`, footnotes) are unwrapped into text, bare `&` in the markup
+  are escaped, and after extraction URLs with parameters like `&section=`/`&region=` are restored
+  (otherwise `html.unescape` in trafilatura turns them into `§ion=`/`®ion=`).
+  trafilatura treats blocks made almost entirely of links as navigation and drops them, but on pages
+  such as a funding guide or an admissions hub that *is* the content (on GOV.UK 58 of 60 list items
+  were lost). So if the page declares a main area (`<main>`, `role=main`, `<article>`),
+  `extractors/main_area.py` reads it straight from the DOM (order, headings, list items, tables,
+  links; no nav/header/footer/aside/forms/hidden elements/cookie widgets), and that text is used
+  when it is 1.5 times longer than trafilatura's (`meta.text_source=main_area`). Ordinary articles
+  stay on trafilatura.
+  Adjacent elements with no whitespace between them in the markup (`<strong>15 July</strong><span
+  class="badge">in 9 months</span>`: the browser separates them with styles, but the extractor read
+  "15 Julyin 9 months") are separated by a space (`separate_glued_elements`): only at an
+  element-element or text-`span` boundary with letters/digits on both sides, never `Sys<b>tem</b>`,
+  `<pre>`, `<code>`, superscripts and subscripts (`15<sup>th</sup>`, `H<sub>2</sub>O`, including when
+  wrapped as `<b><sup>st</sup></b>`) or the ordinal suffixes `st/nd/rd/th` after a digit: otherwise
+  "March 1st" would become "March 1 st" and the deadline would stop matching the source.
+  Tables as `| a | b |`, links as `[text](url)`; if the result is <500 characters, a second pass with
+  `favor_recall`. A short result is NOT an error here: the "too little text" decision is made by the
+  cleaner (1.17). JS-rendered pages (DAAD and Stanford gave 300-700 characters) will be handled by
   Playwright (2.3).
-- **PDF**: pdfplumber; линованные таблицы отдельно от текста; колонтитулы и номера страниц
-  вырезаются по краям страниц (первое вхождение повторяющейся строки сохраняется; счётчик
-  страниц нормализуется только на краю строки, нумерованные заголовки не трогаются). Читаются
-  первые `MAX_PDF_PAGES` страниц и в пределах бюджета времени 30 с. Парсер в потоке нельзя
-  прервать посреди страницы: от зависания защищают лимиты страниц и размера загрузки.
-- **DOCX**: python-docx; заголовки `#` (Title) / `##`.. (Heading 1..), списки `-`, таблицы,
-  URL гиперссылок дописываются в текст `(url)`. Перед разбором проверяются объявленные размеры
-  архива (document.xml ≤20 МБ, всего ≤100 МБ, ≤5000 файлов) против zip-бомб.
-- **YouTube**: субтитры через youtube-transcript-api (в потоке, с таймаутами через
-  `requests.Session`); выбор: ручные на предпочтительном языке, автоматические на нём, любые
-  ручные, любые автоматические (ru, kk, en; `de-DE` считается `de`); маркеры `[Music]`/`[♪♪♪]`
-  вычищаются. Название/канал (oEmbed) и описание со страницы видео идут через `SafeFetcher`
-  и никогда не валят извлечение. Сама библиотека ходит напрямую, но только на youtube.com и
-  с проверенным 11-символьным id.
+- **PDF**: pdfplumber; ruled tables separately from the text; headers, footers and page numbers are
+  removed at page edges (the first occurrence of a repeated line is kept; a page counter is
+  normalised only at the edge of a line, numbered headings are left alone). The first
+  `MAX_PDF_PAGES` pages are read, within a 30 s time budget. A parser running in a thread cannot be
+  interrupted mid-page: the page and download size limits protect against hangs.
+- **DOCX**: python-docx; headings `#` (Title) / `##`.. (Heading 1..), lists `-`, tables, hyperlink
+  URLs appended to the text as `(url)`. Before parsing, the archive's declared sizes are checked
+  (document.xml ≤20 MB, total ≤100 MB, ≤5000 files) against zip bombs.
+- **YouTube**: subtitles via youtube-transcript-api (in a thread, with timeouts through
+  `requests.Session`); preference order: manual in the preferred language, automatic in it, any
+  manual, any automatic (ru, kk, en; `de-DE` counts as `de`); `[Music]`/`[♪♪♪]` markers are removed.
+  The title/channel (oEmbed) and the description from the video page go through `SafeFetcher` and
+  never break extraction. The library itself connects directly, but only to youtube.com and with a
+  validated 11-character id.
 
-### Схема результата (`pipeline/schema.py`)
-Два слоя. `LLMSummary` это ровно то, что просим вернуть модель (его JSON-схема уходит в запрос):
-`source_type` (класс: university_page | scholarship | news_article | publication | general_site |
-other), `title`, `organization`, `overview`, `deadlines[{label, date_iso|null, date_text, quote}]`,
-`key_points[]`, `eligibility[]`, `costs[{item, amount_text}]`, `requirements[]`,
-`useful_links[{title, url}]`, `warnings[]`, `confidence` (high|medium|low). Здесь нет `source_url`
-и результатов проверок: они не дело модели.
+### Result schema (`pipeline/schema.py`)
+Two layers. `LLMSummary` is exactly what we ask the model to return (its JSON schema is sent with
+the request): `source_type` (class: university_page | scholarship | news_article | publication |
+general_site | other), `title`, `organization`, `overview`,
+`deadlines[{label, date_iso|null, date_text, quote}]`, `key_points[]`, `eligibility[]`,
+`costs[{item, amount_text}]`, `requirements[]`, `useful_links[{title, url}]`, `warnings[]`,
+`confidence` (high|medium|low). There is no `source_url` and no check results here: those are not
+the model's business.
 
-`Summary` это то, с чем работает бот: ответ модели после проверок кодом, плюс `source_url`
-(подставляет код), `source_format`, `language`, у каждого дедлайна `verified` и
-`possibly_passed` (`date_iso` уже `date`), и факты для локализованных пометок в рендере:
-`dropped_links`, `truncated`, `pages_read`/`pages_total` (`partial_coverage`).
-Пустые поля выводятся как «не указано в источнике», а не пропускаются молча.
+`Summary` is what the bot works with: the model's answer after the code's checks, plus `source_url`
+(set by the code), `source_format`, `language`, `verified` and `possibly_passed` on each deadline
+(`date_iso` is already a `date`), and the facts for localised notes in the card: `dropped_links`,
+`truncated`, `pages_read`/`pages_total` (`partial_coverage`).
+Empty fields are shown as "not stated in the source" rather than silently skipped.
 
-## Стек и зависимости
-Python 3.12; aiogram 3; httpx; trafilatura; playwright (опционально, extra);
+## Stack and dependencies
+Python 3.12; aiogram 3; httpx; trafilatura; playwright (optional, extra);
 pdfplumber; pypdf; python-docx; youtube-transcript-api; yt-dlp (fallback);
 anthropic; pydantic v2 + pydantic-settings; aiosqlite; pytest, pytest-asyncio, respx; ruff; mypy.
-Менеджер пакетов: `uv` (или pip + `requirements.txt`, если uv недоступен).
+Package manager: `uv` (or pip + `requirements.txt` if uv is not available).
 
-## Работа с LLM
-Реализация: `pipeline/summarizer.py`, промпт `prompts/system.md`, проверки `pipeline/verify.py`.
-- Вызов через `anthropic` SDK (`AsyncAnthropic`), модель из `LLM_MODEL`, не хардкодить.
-  Для новых проектов справочник по API рекомендует `claude-opus-5-5`; `claude-sonnet-5-5` дешевле
-  по тому же интерфейсу. Смена модели правится только в `.env`.
-- **Структурированный вывод через `output_config.format` (JSON-схема из `LLMSummary`)**, а не
-  через принудительный tool use: на новых моделях `tool_choice: any/tool` возвращает 400.
-  Ответ валидируется pydantic; при ошибке один повтор с текстом ошибки (только пути полей и
-  сообщения, без значений, чтобы не эхом возвращать текст страницы).
-- **Не передавать `temperature`/`top_p`/`top_k` и `thinking`**: новые модели отвечают 400 на
-  параметры сэмплинга, а мышление включено само. Глубину задаёт `LLM_EFFORT` (по умолчанию
-  `medium`; пустое/None убирает параметр для моделей, которые его не принимают, напр. Haiku 4.5).
-- **Один вызов, без чанкинга.** `MAX_CHARS` (120000 знаков, ~30-50 тыс. токенов) на порядок ниже
-  окна модели (1M; у Haiku 200K), а один проход видит весь документ: «куски + merge» только
-  добавил бы способы потерять дедлайн. Вернуться к чанкингу, если `MAX_CHARS` поднимут выше
-  ~300 тыс. знаков или перейдут на модель с малым окном.
-- **Классификация объединена с извлечением**: модель выбирает `source_type` в том же ответе, а
-  подсказки по классам лежат в общем системном промпте (не 4 файла и не 2 вызова).
-- Источник это данные: страница кладётся в **пользовательское** сообщение внутри
-  `<source_document>`, теги `<source_document>`/`<task>` внутри текста обезвреживаются, URL из
-  редиректа экранируется. Системный промпт запрещает исполнять текст страницы.
-- `max_tokens` 8000; `stop_reason` `refusal` и `max_tokens` не повторяются, а дают `LLMError`.
-- Ошибки API отображаются в `LLMError(reason)`: `llm_busy`, `llm_unreachable`, `llm_refused`,
-  `llm_truncated`, `llm_invalid`, `llm_too_large`, `llm_config` (ключ/модель: ошибка для
-  оператора, в лог на ERROR), `llm_failed`. Сам SDK уже ретраит 429/5xx (2 раза).
-- Отказы модели (`refusal`) для публичных страниц поступления маловероятны и обрабатываются как
-  ошибка. Серверный `fallbacks` (опция API для некоторых моделей) не включён; добавить, если
-  отказы начнут встречаться.
-- Один `Summarizer` обслуживает всех пользователей: никакого изменяемого состояния на `self`.
-- Логировать: модель, токены, время, класс источника. Не логировать текст страниц и саммари.
+## Working with the LLM
+Implementation: `pipeline/summarizer.py`, prompt `prompts/system.md`, checks `pipeline/verify.py`.
+- Calls go through the `anthropic` SDK (`AsyncAnthropic`); the model comes from `LLM_MODEL` and is
+  never hardcoded. The API reference recommends `claude-opus-5-5` for new projects;
+  `claude-sonnet-5-5` is cheaper with the same interface. Changing the model only requires editing
+  `.env`.
+- **Structured output via `output_config.format` (a JSON schema from `LLMSummary`)**, not forced
+  tool use: on newer models `tool_choice: any/tool` returns 400. The answer is validated with
+  pydantic; on error there is one retry with the error text (field paths and messages only, no
+  values, so the page text is not echoed back).
+- **Do not pass `temperature`/`top_p`/`top_k` or `thinking`**: newer models return 400 for sampling
+  parameters, and thinking is on by default. Depth is set by `LLM_EFFORT` (`medium` by default;
+  empty/None removes the parameter for models that do not accept it, e.g. Haiku 4.5).
+- **One call, no chunking.** `MAX_CHARS` (120,000 characters, ~30-50k tokens) is an order of
+  magnitude below the model's context window (1M; 200K for Haiku), and a single pass sees the whole
+  document: "chunks + merge" would only add ways to lose a deadline. Revisit chunking if `MAX_CHARS`
+  is raised above ~300k characters or a model with a small window is used.
+- **Classification is combined with extraction**: the model picks `source_type` in the same answer,
+  and the per-class hints live in the shared system prompt (not 4 files and not 2 calls).
+- The source is data: the page goes into the **user** message inside `<source_document>`,
+  `<source_document>`/`<task>` tags inside the text are neutralised, and the URL from a redirect is
+  escaped. The system prompt forbids following instructions in the page text.
+- `max_tokens` is 8000; the `refusal` and `max_tokens` stop reasons are not retried and produce an
+  `LLMError`.
+- API errors are mapped to `LLMError(reason)`: `llm_busy`, `llm_unreachable`, `llm_refused`,
+  `llm_truncated`, `llm_invalid`, `llm_too_large`, `llm_config` (key/model: an operator error,
+  logged at ERROR), `llm_failed`. The SDK itself already retries 429/5xx (twice).
+- Model refusals are unlikely for public admissions pages and are treated as errors. The
+  server-side `fallbacks` option (an API option for some models) is not enabled; add it if refusals
+  start to appear.
+- One `Summarizer` serves all users: no mutable state on `self`.
+- Log: model, tokens, time, source class. Do not log page text or summaries.
 
-## Анти-галлюцинации (обязательно)
-- Извлекать ТОЛЬКО то, что есть в тексте. Нет данных → `null`/«не указано».
-- Каждый дедлайн сопровождается дословной `quote`. Код (`verify.py`) сверяет цитату и `date_text`
-  с очищенным текстом, который видела модель (сравнение после снятия разметки таблиц/ссылок,
-  без регистра, с одним видом кавычек и тире; `...` допустимо между кусками по порядку, цитата
-  не короче 8 знаков). Не подтвердилось → `verified=False`, в рендере помечается.
-- `date_iso` оставляется только если год назван в `date_text` или цитате. Угаданный год стирается
-  (иначе от него зависело бы «дедлайн мог пройти»).
-- `possibly_passed`: `date_iso` раньше сегодняшней даты.
-- `useful_links` фильтруются: только URL, встречающиеся в тексте или `links` источника, сравнение
-  по целому URL (`https://x.edu` не равно `https://x.edu/apply`); не http(s) отбрасываются;
-  не больше 8; количество отброшенных идёт в `dropped_links`.
-  Это защита от выдуманных ссылок, **не** от ссылок, которые подсовывает сама страница: вредный
-  URL в тексте страницы пройдёт фильтр. От этого защищает промпт и то, что в рендере у ссылки
-  надо показывать домен (1.25).
-- Из `warnings` вырезаются любые URL (Telegram делает их кликабельными, а модель, описывая
-  попытку инъекции, может процитировать адрес атакующего): ссылкам место только в `useful_links`.
-- `source_url` подставляется кодом, никогда не генерируется моделью.
-- Уверенность калибруется кодом: частичное чтение (обрезка, `pages_read < pages_total`) не выше
-  `medium`; если ни один дедлайн не подтверждён текстом, то `low`.
-- Если извлечённый текст короче порога (<300 знаков), не вызывать LLM (`TooLittleTextError`).
+## Anti-hallucination (mandatory)
+- Extract ONLY what is in the text. No data → `null`/"not stated".
+- Every deadline comes with a verbatim `quote`. The code (`verify.py`) checks the quote and
+  `date_text` against the cleaned text the model saw (compared after stripping table/link markup,
+  case-insensitive, with a single kind of quotes and dashes; `...` is allowed between pieces in
+  order; the quote must be at least 8 characters). Not confirmed → `verified=False`, flagged in the
+  card.
+- `date_iso` is kept only if the year appears in `date_text` or the quote. A guessed year is erased
+  (otherwise "the deadline may have passed" would depend on it).
+- `possibly_passed`: `date_iso` is earlier than today.
+- `useful_links` are filtered: only URLs that appear in the text or the source's `links`, compared
+  as whole URLs (`https://x.edu` is not equal to `https://x.edu/apply`); non-http(s) links are
+  dropped; at most 8; the number dropped goes into `dropped_links`.
+  This protects against invented links, **not** against links planted by the page itself: a
+  malicious URL in the page text will pass the filter. That is handled by the prompt and by always
+  showing the link's domain in the card (1.25).
+- All URLs are stripped from `warnings` (Telegram makes them clickable, and a model describing an
+  injection attempt may quote the attacker's address): links belong only in `useful_links`.
+- `source_url` is set by the code and never generated by the model.
+- Confidence is calibrated by the code: partial reading (truncation, `pages_read < pages_total`) is
+  capped at `medium`; if no deadline is confirmed by the text, it is `low`.
+- If the extracted text is shorter than the threshold (<300 characters), the LLM is not called
+  (`TooLittleTextError`).
 
-## Очистка контента
-Два слоя. Экстрактор убирает шум на уровне разметки (trafilatura: меню, cookie-баннер, реклама,
-футер; таблицы как `| a | b |`; PDF: колонтитулы/номера страниц; YouTube: `[Music]`). Потом
-`pipeline/cleaner.py` чистит текст, независимо от формата:
-- `clean_content(content, max_chars)` возвращает копию; `ensure_enough_text(content)` бросает
-  `TooLittleTextError(source_format, chars, minimum)` при `<300` знаков, LLM в этом случае не
-  вызывается. Причину подсказать по формату: HTML — вход/платный доступ/страница строится
-  JavaScript (Playwright 2.3 закроет часть случаев), PDF/DOCX — почти пустой файл, YouTube —
-  слишком короткие субтитры.
-- Для всех форматов: невидимые символы (ZWSP, мягкий перенос, BOM, bidi) и управляющие
-  символы удаляются, NFC, любые странные пробелы и табы схлопываются, пустые строки не более
-  одной, подряд идущие одинаковые строки (≥10 знаков, без учёта пустых между ними) схлопываются,
-  обрезка до `MAX_CHARS` по границе строки с маркером в конце и `meta.truncated`/`original_chars`.
-- Только для HTML: строки с отступом после строки прозы склеиваются с ней (так вёрстка
-  переносит абзацы; неотступленные строки никогда не склеиваются «по догадке»); шум страниц
-  (`Skip to content`, `Share`, `Read more`, cookie- и copyright-строки, `[edit]`, строки из
-  одной `[`); сноски `[1]`, приклеенные к слову; повторы длинных (≥200 знаков) строк.
-  В PDF/DOCX этого нет: «Menu» там может быть содержимым, а повтор пункта договора бывает
-  законным.
-- **Омоглифы** (`fold_look_alikes`): некоторые сайты подмешивают в слова кириллические двойники
-  латинских букв (`Sуstеms`, `signaturе`) или наоборот. Слово со смесью алфавитов чинится, если
-  в нём преобладает один алфавит (при равенстве решает алфавит всего текста) и у каждой «чужой»
-  буквы есть визуальный двойник; иначе слово не трогается (`PDFфайл`, `Mиxed`). Нормальный
-  русский, казахский, немецкий текст не меняется. Чинится и заголовок; счётчик в
-  `meta.lookalike_words_repaired`. Делается до правил шума, иначе «Skір to content» не узнать.
-- Не делаем: перенос слов (`при-\nём`), склейку строк по эвристике «следующая с маленькой
-  буквы» (ломает строки таблиц с дедлайнами), удаление неподряд повторяющихся коротких строк.
-- `links` после очистки сужается до URL, которые остались в тексте (проверка по целому URL:
-  `https://x.edu` не считается присутствующим внутри `https://x.edu/apply`).
-- Таблицы сохранять как текст (строки через ` | `): дедлайны часто в таблицах.
-- Если trafilatura вернула слишком мало, fallback на Playwright (рендер JS), потом повтор (2.3).
-- YouTube: транскрипт + название + описание; помечать, что источник видео, а не документ.
+## Content cleaning
+Two layers. The extractor removes noise at the markup level (trafilatura: menus, cookie banners,
+ads, footers; tables as `| a | b |`; PDF: headers/footers/page numbers; YouTube: `[Music]`). Then
+`pipeline/cleaner.py` cleans the text regardless of format:
+- `clean_content(content, max_chars)` returns a copy; `ensure_enough_text(content)` raises
+  `TooLittleTextError(source_format, chars, minimum)` at `<300` characters, and the LLM is not called.
+  The hint depends on the format: HTML — login/paywall/page built by JavaScript (Playwright 2.3 will
+  cover some cases), PDF/DOCX — an almost empty file, YouTube — subtitles too short.
+- For all formats: invisible characters (ZWSP, soft hyphen, BOM, bidi) and control characters are
+  removed, NFC is applied, unusual spaces and tabs are collapsed, at most one blank line in a row,
+  consecutive identical lines (≥10 characters, ignoring blank lines between them) are collapsed,
+  and the text is trimmed to `MAX_CHARS` at a line boundary with a marker at the end and
+  `meta.truncated`/`original_chars`.
+- HTML only: indented lines following a line of prose are joined to it (this is how layouts wrap
+  paragraphs; non-indented lines are never joined "by guess"); page noise (`Skip to content`,
+  `Share`, `Read more`, cookie and copyright lines, `[edit]`, lines consisting of a single `[`);
+  footnotes `[1]` glued to a word; repeats of long (≥200 characters) lines.
+  None of this is done for PDF/DOCX: "Menu" can be real content there, and a repeated contract
+  clause can be legitimate.
+- **Homoglyphs** (`fold_look_alikes`): some sites mix Cyrillic look-alikes of Latin letters into
+  words (`Sуstеms`, `signaturе`) or the other way round. A mixed-script word is repaired if one
+  script dominates it (on a tie, the script of the whole text decides) and every "foreign" letter
+  has a visual twin; otherwise the word is left alone (`PDFфайл`, `Mиxed`). Normal Russian, Kazakh
+  or German text is not changed. The title is repaired too; the counter is
+  `meta.lookalike_words_repaired`. This runs before the noise rules, otherwise "Skір to content"
+  would not be recognised.
+- Not done: de-hyphenation (`при-\nём`), joining lines by the "next line starts lowercase" heuristic
+  (it breaks table rows with deadlines), removing non-consecutive repeated short lines.
+- After cleaning, `links` is narrowed to URLs still present in the text (compared as whole URLs:
+  `https://x.edu` is not considered present inside `https://x.edu/apply`).
+- Keep tables as text (cells separated by ` | `): deadlines are often in tables.
+- If trafilatura returns too little, fall back to Playwright (JS rendering), then retry (2.3).
+- YouTube: transcript + title + description; mark that the source is a video, not a document.
 
-## Формат ответа в Telegram
-`render/telegram.py`: `render_summary(Summary) -> list[str]` (HTML parse mode, один или несколько
-сообщений). Telegram не умеет таблиц, поэтому «таблица» это карточка из секций с эмодзи, всегда
-в одном порядке: заголовок (название, организация · тип), обзор, ⏰ Дедлайны, ✅ Основные пункты,
-👤 Кто может подаваться, 💰 Стоимость / финансирование, 📋 Требования, 🔗 Полезные ссылки,
-⚠️ Важно (если есть), 🟢/🟡/🔴 Надёжность разбора, 🔎 Источник.
-- Язык карточки `summary.language` (ru/en/kk), тексты в `render/texts.py` (у всех языков одни и те
-  же ключи и плейсхолдеры, тест это проверяет; казахский стоит показать носителю).
-  `date_text`, `amount_text`, цитаты идут на языке источника, как задумано.
-- Пустая секция не пропадает, а показывает «не указано в источнике».
-- Дедлайн: метка, дата как написана, ниже короткая цитата. `❓` не подтверждён цитатой, `⏳`
-  возможно уже прошёл; пояснения идут в блоке «Важно». Там же, по важности: непроверенные даты,
-  прошедшие даты, обрезка/частичное чтение, скрытые ссылки, затем предупреждения модели.
-- Ссылка: `<a href>название</a> — <code>домен</code>` (домен показывается всегда: фильтр ссылок не
-  защищает от URL, которые подсовывает сама страница; в `<code>`, потому что обычный текст
-  Telegram сам превращает во вторую ссылку). В `href` только http(s); дубли одной страницы под
-  `http`/`https`/`www` сливаются, остаётся https.
-- **Источник всегда последняя строка последнего сообщения**, даже у пустой карточки; ссылка
-  ведёт на точный URL, а видимый текст длинного URL сокращается.
-- Разметка: только `<b> <i> <a href> <code>`; все строки из модели и страницы обрезаются и
-  экранируются ровно четырьмя сущностями Telegram (`& < > "`), теги никогда не остаются
-  открытыми между строками, поэтому делить текст между строками безопасно.
-- Длина считается как у Telegram: без тегов и адресов в `href`, эмодзи за два (UTF-16), порог
-  4000 при лимите 4096. Блок целиком переносится в следующее сообщение, а слишком длинный
-  делится между строками.
-- Кнопки под ответом: «🔄 Обновить» (2.1, готово); «📄 Полное саммари», «🌐 Сменить язык» (Phase 2).
+## Telegram answer format
+`render/telegram.py`: `render_summary(Summary) -> list[str]` (HTML parse mode, one or more
+messages). Telegram has no tables, so the "table" is a card of emoji sections, always in the same
+order: header (title, organisation · type), overview, ⏰ Deadlines, ✅ Key points, 👤 Who can apply,
+💰 Costs / funding, 📋 Requirements, 🔗 Useful links, ⚠️ Please note (if any),
+🟢/🟡/🔴 Reliability of this summary, 🔎 Source.
+- The card language is `summary.language` (ru/en/kk); texts are in `render/texts.py` (all
+  languages have the same keys and placeholders, a test checks this; the Kazakh texts should be
+  reviewed by a native speaker). `date_text`, `amount_text` and quotes stay in the source language,
+  by design.
+- An empty section does not disappear; it shows "not stated in the source".
+- Deadline: label, the date as written, and a short quote below. `❓` not confirmed by a quote,
+  `⏳` may have passed; explanations go in the "Please note" block. That block lists, by
+  importance: unverified dates, past dates, truncation/partial reading, hidden links, then the
+  model's warnings.
+- Link: `<a href>title</a> — <code>domain</code>` (the domain is always shown: the link filter does
+  not protect against URLs planted by the page itself; it is in `<code>` because Telegram turns
+  plain text into a second link). Only http(s) in `href`; duplicates of one page under
+  `http`/`https`/`www` are merged, keeping https.
+- **The source is always the last line of the last message**, even for an empty card; the link
+  points to the exact URL, and the visible text of a long URL is shortened.
+- Markup: only `<b> <i> <a href> <code>`; all strings from the model and the page are trimmed and
+  escaped with exactly Telegram's four entities (`& < > "`), and tags are never left open across
+  lines, so splitting text between lines is safe.
+- Length is counted the way Telegram does: without tags and `href` addresses, emoji count as two
+  (UTF-16), threshold 4000 against the 4096 limit. A block is moved to the next message whole, and
+  a block that is too long is split between lines.
+- Buttons under the answer: "🔄 Обновить" (Refresh) (2.1, done); "📄 Full summary",
+  "🌐 Change language" (Phase 2).
 
-## Ошибки и UX
-`render/errors.py`: `describe_error(exc, language)` (чистая функция) и `handle_error(...)` (ещё и
-пишет в лог). Пользователь не видит имён исключений, трассировок, статусов серверов (кроме
-кода 4xx/5xx в понятной фразе), причин блокировки адреса и проблем с ключом API.
-- Сообщения по типу и `reason`: некорректная/запрещённая ссылка (одно общее «не могу открыть», без
-  деталей про SSRF), сайт не найден, 401/403 («вход, платный доступ или защита от ботов»), 404,
-  429, 5xx, таймаут, нет соединения, много редиректов, файл больше `MAX_DOWNLOAD_MB`, `.doc`,
-  не видео YouTube, архив/Excel, скан PDF, PDF с паролем, битый файл, подозрительный архив, нет
-  субтитров, видео недоступно, блокировка YouTube, мало текста (по формату), ошибки LLM.
-- `llm_config` (ключ/модель) пользователю как «сервис временно недоступен», в лог на ERROR.
-  Неожиданные исключения: нейтральное сообщение, в лог полная трассировка. Ожидаемые: INFO, без
-  URL в логе.
-- Тест сканирует `bot/` и требует сообщение для каждой `reason`, которая где-либо поднимается:
-  новая причина без текста ломает сборку.
+## Errors and UX
+`render/errors.py`: `describe_error(exc, language)` (a pure function) and `handle_error(...)` (which
+also logs). The user never sees exception names, tracebacks, server statuses (other than a 4xx/5xx
+code in a plain sentence), reasons an address was blocked, or API key problems.
+- Messages by type and `reason`: invalid/forbidden link (one generic "can't open this", with no SSRF
+  details), site not found, 401/403 ("login, paywall or bot protection"), 404, 429, 5xx, timeout,
+  no connection, too many redirects, file larger than `MAX_DOWNLOAD_MB`, `.doc`, not a YouTube video,
+  archive/Excel, scanned PDF, password-protected PDF, corrupt file, suspicious archive, no
+  subtitles, video unavailable, YouTube blocking, too little text (by format), LLM errors.
+- `llm_config` (key/model) is shown to the user as "the service is temporarily unavailable" and
+  logged at ERROR. Unexpected exceptions: a neutral message, full traceback in the log. Expected
+  ones: INFO, no URL in the log.
+- A test scans `bot/` and requires a message for every `reason` raised anywhere: a new reason
+  without a text breaks the build.
 
-## Безопасность (не обсуждается)
-- **SSRF**: только `http/https`; резолвить DNS и блокировать private/loopback/link-local
+## Security (non-negotiable)
+- **SSRF**: only `http/https`; resolve DNS and block private/loopback/link-local addresses
   (`127.0.0.0/8`, `10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `::1`, `fc00::/7`);
-  проверять и на каждом редиректе; лимит редиректов ≤5.
-  - Проверяются **все** адреса, в которые резолвится имя; адреса внутри IPv4-mapped, 6to4, NAT64
-    оцениваются по вложенному IPv4, Teredo и multicast запрещены.
-  - Против DNS-rebinding: имя резолвится один раз, соединение идёт на проверенный IP
-    (`Host` и SNI остаются оригинальными). Никогда не отдавать httpx исходное имя хоста.
-  - Разрешены только порты 80 и 443; URL с логином/паролем (`user:pass@`) отклоняются.
-  - httpx: `trust_env=False` (прокси из окружения подменили бы проверенный адрес) и
-    `follow_redirects=False` (редиректы идут вручную через guard).
-  - Всё выше сидит в `security/`. Новые сетевые вызовы к пользовательским URL делать только
-    через `SafeFetcher`, не напрямую через httpx.
-- Лимиты: размер загрузки ≤ `MAX_DOWNLOAD_MB` (по умолчанию 15), таймаут ≤ 20 с,
-  страниц PDF ≤ `MAX_PDF_PAGES`, rate limit на пользователя (напр. 10 запросов/час).
-- Содержимое источника это данные, не инструкции (**prompt injection**): в системном промпте явно
-  запретить выполнять команды из текста страницы; результат валидируется схемой.
-- Не выполнять скачанные файлы. Временные файлы удалять.
-- Соблюдать `robots.txt` при массовом использовании; честный User-Agent.
-- Токены и ключи только в env; не логировать.
+  check on every redirect too; at most 5 redirects.
+  - **All** addresses a name resolves to are checked; addresses inside IPv4-mapped, 6to4 and NAT64
+    are judged by the embedded IPv4; Teredo and multicast are forbidden.
+  - Against DNS rebinding: the name is resolved once and the connection goes to the checked IP
+    (`Host` and SNI stay original). Never hand the original host name to httpx.
+  - Only ports 80 and 443 are allowed; URLs with a login/password (`user:pass@`) are rejected.
+  - httpx: `trust_env=False` (a proxy from the environment would replace the checked address) and
+    `follow_redirects=False` (redirects are followed manually through the guard).
+  - All of the above lives in `security/`. New network calls to user URLs go only through
+    `SafeFetcher`, never directly through httpx.
+- Limits: download size ≤ `MAX_DOWNLOAD_MB` (15 by default), timeout ≤ 20 s,
+  PDF pages ≤ `MAX_PDF_PAGES`, per-user rate limit (e.g. 10 requests/hour).
+- Source content is data, not instructions (**prompt injection**): the system prompt explicitly
+  forbids following commands from the page text; the result is validated against the schema.
+- Never execute downloaded files. Delete temporary files.
+- Respect `robots.txt` for bulk use; use an honest User-Agent.
+- Tokens and keys live only in env; never log them.
 
-## Ошибки и UX
-Понятные сообщения на языке пользователя для: невалидный URL, страница недоступна (4xx/5xx),
-таймаут, файл слишком большой, неподдерживаемый формат, paywall/логин, нет субтитров у видео,
-превышен лимит запросов, ошибка LLM. Никаких стектрейсов пользователю.
+## User-facing error messages
+Clear messages in the user's language for: invalid URL, page unavailable (4xx/5xx), timeout, file
+too large, unsupported format, paywall/login, video without subtitles, request limit exceeded, LLM
+error. No stack traces for the user.
 
-## Кэширование
-`storage/cache.py` (SQLite через `aiosqlite`, файл `CACHE_DB_PATH`) + `Orchestrator.run/cached_summary`.
-Кэш хранит готовый `Summary` и нужен, чтобы повторная ссылка не стоила ни скачивания, ни вызова
-модели (а один запрос теперь может стоить два вызова).
-- **Ключ**: `cache_key(url)` из `bot/urls.py` + язык карточки. Без `utm_*`, `fbclid`, `gclid` и т.п.,
-  без `#якоря`, хост в нижнем регистре, порт по умолчанию отброшен; YouTube это id видео (`youtu.be/ID`,
-  `watch?v=ID&t=30s`, `shorts/ID` один ключ). Больше **ничего не склеивается**: слеш в конце, регистр пути,
-  `www.`, `http`/`https`, порядок и значения остальных параметров различают страницы (склеить разные
-  страницы значит отдать чужое саммари). Ссылки с логином в адресе и не-http ключа не имеют: их
-  отклоняет сам пайплайн.
-- **Свежая запись** (моложе `CACHE_TTL_HOURS`) отдаётся сразу: без скачивания, без модели, без очереди
-  на слот, и **не списывается из часового лимита** пользователя (платят только настоящие запросы).
-- **Старая запись** (TTL прошёл, но ей меньше 7 суток): страница читается заново, и если хэш
-  очищенного текста тот же, модель не вызывается, берётся старый ответ (возраст в карточке остаётся
-  прежним, запись не «омолаживается»; через 7 суток она удаляется и ответ строится заново). Хэш другой:
-  новый ответ и новая запись. Счётчики вроде «через 103 дня» в тексте дают ложные промахи, ложных
-  попаданий нет. Связанные страницы (2.7) в хэш не входят: их изменение подхватится после 7 суток или
-  по кнопке «Обновить».
-- **Отпечаток** записи: модель, `LLM_EFFORT`, JSON-схема, текст `system.md`, `FOLLOW_LINKED_PAGES`,
-  `MAX_CHARS` и `PIPELINE_VERSION` (константа в `orchestrator.py`: поднимать, когда меняется
-  извлечение, очистка, проверка или карточка). Запись с другим отпечатком не отдаётся. Правка промпта
-  или смена модели не оставляет старых ответов.
-- При выдаче из кэша код подставляет `source_url` **ссылки, которую прислал этот пользователь**
-  (в записи лежит ссылка первого), пересчитывает `possibly_passed` по сегодняшней дате и ставит
-  `cached_minutes_ago`: в карточке строка «🕒 Показан сохранённый ответ: страница была прочитана N мин
-  назад…» перед источником.
-- **Не кэшируются**: ошибки, страницы без текста, файлы из чата (адрес `telegram://uploaded-file`
-  один на всех: ключа нет). Хранятся только ответы о публичных страницах, **без данных пользователей**.
-- **Кэш не может уронить запрос**: файл недоступен/не база/битая строка/полный диск = промах, одно
-  предупреждение в лог без URL, пайплайн идёт как обычно. Схема версионируется через
-  `PRAGMA user_version` (при смене пересоздаётся: в кэше нечего мигрировать). Строки старше 7 суток
-  удаляются, всего не больше 5000 (остаются новейшие).
-- **Кнопка «🔄 Обновить»** (`handlers/refresh.py`) под последним сообщением карточки. `callback_data` это
-  `refresh:<16 hex>` (хэш ключа и языка; адреса в нём нет, лимит Telegram 64 байта), по ней из таблицы
-  берутся ссылка (как её прислали) и язык. Нажатие игнорирует кэш (`run(..., refresh=True)`: и свежую запись, и
-  повторное использование по хэшу), **списывается из часового лимита**, один и тот же `button_id` не
-  запускается дважды одновременно («уже обновляю»). Успех: новая карточка со своей кнопкой, у старой
-  кнопка убирается. Сбой: понятное сообщение, у старой карточки кнопка остаётся. Кнопка не
-  показывается, если ответ не сохранился (кэш выключен/сломан), просроченная кнопка отвечает «кнопка
-  устарела». `CACHE_TTL_HOURS=0` выключает кэш и кнопку.
-- Не сделано: две одновременные первые просьбы об одной новой ссылке оба платят за модель (общего
-  «полёта» запросов нет).
+## Caching
+`storage/cache.py` (SQLite via `aiosqlite`, file `CACHE_DB_PATH`) + `Orchestrator.run/cached_summary`.
+The cache stores a finished `Summary` so that a repeated link costs neither a download nor a model
+call (and one request can now cost two calls).
+- **Key**: `cache_key(url)` from `bot/urls.py` + the card language. No `utm_*`, `fbclid`, `gclid`
+  and similar, no `#anchor`, lowercase host, default port dropped; for YouTube it is the video id
+  (`youtu.be/ID`, `watch?v=ID&t=30s`, `shorts/ID` are one key). **Nothing else is merged**: a
+  trailing slash, path case, `www.`, `http`/`https`, the order and values of other parameters all
+  distinguish pages (merging different pages would mean serving someone else's summary). Links with
+  a login in the address and non-http links have no key: the pipeline itself rejects them.
+- **A fresh entry** (younger than `CACHE_TTL_HOURS`) is served immediately: no download, no model,
+  no waiting for a slot, and it is **not counted against the user's hourly limit** (only real
+  requests count).
+- **An old entry** (TTL expired but younger than 7 days): the page is read again, and if the hash of
+  the cleaned text is the same, the model is not called and the old answer is used (the age shown
+  in the card stays the same, the entry is not "renewed"; after 7 days it is deleted and the answer
+  is built again). A different hash: a new answer and a new entry. Counters like "in 103 days" in
+  the text cause false misses, never false hits. Linked pages (2.7) are not part of the hash: their
+  changes are picked up after 7 days or via the Refresh button.
+- **Fingerprint** of an entry: the model, `LLM_EFFORT`, the JSON schema, the text of `system.md`,
+  `FOLLOW_LINKED_PAGES`, `MAX_CHARS` and `PIPELINE_VERSION` (a constant in `orchestrator.py`: bump it
+  when extraction, cleaning, checks or the card change). An entry with a different fingerprint is
+  not served. Editing the prompt or changing the model leaves no stale answers.
+- When serving from the cache, the code sets `source_url` to **the link this user sent** (the entry
+  stores the first user's link), recalculates `possibly_passed` against today's date and sets
+  `cached_minutes_ago`: the card shows a line "🕒 Showing a saved answer: the page was read N min
+  ago…" before the source.
+- **Not cached**: errors, pages without text, files from the chat (the address
+  `telegram://uploaded-file` is the same for everyone: no key). Only answers about public pages are
+  stored, **with no user data**.
+- **The cache can never break a request**: file unavailable/not a database/corrupt row/full disk =
+  a miss, one warning in the log without the URL, and the pipeline runs as usual. The schema is
+  versioned via `PRAGMA user_version` (recreated on change: there is nothing to migrate in a cache).
+  Rows older than 7 days are deleted, at most 5000 in total (the newest are kept).
+- **The "🔄 Обновить" (Refresh) button** (`handlers/refresh.py`) sits under the last message of the
+  card. `callback_data` is `refresh:<16 hex>` (a hash of the key and language; no address in it,
+  Telegram's limit is 64 bytes); it is used to look up the link (as it was sent) and the language in
+  the table. Pressing it ignores the cache (`run(..., refresh=True)`: both the fresh entry and reuse
+  by hash), **counts against the hourly limit**, and the same `button_id` never runs twice at once
+  ("already refreshing"). Success: a new card with its own button, and the old card's button is
+  removed. Failure: a clear message, and the old card keeps its button. The button is not shown if
+  the answer was not saved (cache disabled/broken); an expired button replies "this button has
+  expired". `CACHE_TTL_HOURS=0` disables both the cache and the button.
+- Not done: two simultaneous first requests for the same new link both pay for the model (there is
+  no shared "in-flight" request).
 
-## Конфигурация (.env)
+## Configuration (.env)
 ```
 TELEGRAM_BOT_TOKEN=
 ANTHROPIC_API_KEY=
@@ -433,41 +447,41 @@ CACHE_DB_PATH=data/cache.sqlite3
 LOG_LEVEL=INFO
 ```
 
-## Команды
+## Commands
 ```
-uv sync                      # установка
-uv run python -m bot.main    # запуск бота
-uv run pytest                # тесты
+uv sync                      # install
+uv run python -m bot.main    # run the bot
+uv run pytest                # tests
 uv run ruff check . && uv run ruff format --check .
 uv run mypy bot
-uv run python -m bot.evaluation   # качество на golden-наборе (тратит токены API)
-uv run pytest -m live -s        # тесты на настоящем API
+uv run python -m bot.evaluation   # quality on the golden set (uses API tokens)
+uv run pytest -m live -s        # tests against the real API
 docker build -t admissions-bot . && docker run --env-file .env admissions-bot
 ```
 
-## Тестирование
-- Юнит-тесты: детектор типов, url_guard (SSRF-кейсы), cleaner, рендер, проверка цитат дедлайнов.
-- Extractors тестируются на сохранённых фикстурах (`tests/fixtures`), без сети (respx).
-- Тест пайплайна с замоканным LLM. Отдельный необязательный e2e-набор с реальным API
-  (маркер `@pytest.mark.live`), не запускается по умолчанию.
-- **Golden-набор** (`evals/golden.json`, запуск `uv run python -m bot.evaluation [--only ID] [--json]`).
-  Случай это сохранённый вход (файл) или живой URL плюс ожидаемые факты: класс источника, даты
-  дедлайнов (ISO, или текст для дат без года), подстроки в стоимости, ссылки, запрещённый текст
-  (проверяется везде, кроме `warnings`), либо ожидаемая ошибка. Метрики: полнота дедлайнов,
-  **дедлайны без подтверждения текстом** (мера выдумок, не зависит от того, что перечислено в
-  файле), запрещённый текст. Код возврата не 0, если полнота < 90% или есть неподтверждённые.
-  Случаи без файла (только URL) живые: чужой сайт может лечь или измениться, поэтому они
-  запускаются только с `--live`. Сейчас в наборе 8 сохранённых случаев (HTML на двух языках, PDF, DOCX, страница из ссылок,
-  инъекция, JS-оболочка с ожидаемой ошибкой). Реальные страницы добавляются записью с
-  `"source": {"url": "..."}` без `file`; ожидания к ним нужно проверить по самой странице,
-  а срок годности у них короткий (даты уходят в прошлое).
-- Инструмент измерения сам покрыт тестами (`tests/test_evaluation.py`): мутация метрики должна
-  ронять тест.
+## Testing
+- Unit tests: type detector, url_guard (SSRF cases), cleaner, rendering, deadline quote checks.
+- Extractors are tested on stored fixtures (`tests/fixtures`), with no network (respx).
+- A pipeline test with a mocked LLM. A separate optional e2e suite against the real API
+  (marker `@pytest.mark.live`), not run by default.
+- **Golden set** (`evals/golden.json`, run with `uv run python -m bot.evaluation [--only ID] [--json]`).
+  A case is a stored input (file) or a live URL plus expected facts: source class, deadline dates
+  (ISO, or text for dates without a year), substrings in costs, links, forbidden text (checked
+  everywhere except `warnings`), or an expected error. Metrics: deadline recall, **deadlines not
+  confirmed by the text** (a measure of invention that does not depend on what the file lists),
+  forbidden text. The exit code is non-zero if recall < 90% or there are unconfirmed deadlines.
+  Cases without a file (URL only) are live: someone else's site may go down or change, so they run
+  only with `--live`. The set currently has 8 stored cases (HTML in two languages, PDF, DOCX, a
+  link-heavy page, an injection, a JS shell with an expected error). Real pages are added as an
+  entry with `"source": {"url": "..."}` and no `file`; their expectations must be checked against
+  the page itself, and they go stale quickly (dates move into the past).
+- The measuring tool is covered by tests itself (`tests/test_evaluation.py`): mutating a metric must
+  fail a test.
 
-## Definition of Done для задачи
-Код + тесты проходят, `ruff` и `mypy` без ошибок, обновлён `TASKS.md`, нет новых секретов в коде,
-поведение проверено вручную в реальном Telegram-чате (для пользовательских функций).
+## Definition of Done for a task
+Code + tests pass, `ruff` and `mypy` report no errors, `TASKS.md` is updated, no new secrets in the
+code, behaviour checked by hand in a real Telegram chat (for user-facing features).
 
-## Вне MVP (не делать, пока не попросят)
-OCR сканов, старый `.doc`, авторизованные страницы, мультиссылочные сравнения,
-веб-админка, платежи, напоминания о дедлайнах (Phase 3).
+## Out of MVP scope (do not build until asked)
+OCR of scans, the old `.doc` format, pages behind login, multi-link comparisons, a web admin panel,
+payments, deadline reminders (Phase 3).

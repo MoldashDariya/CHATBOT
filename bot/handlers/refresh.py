@@ -1,4 +1,4 @@
-"""The "🔄 Обновить" button under an answer: read the page again, ignoring the stored answer."""
+"""The "🔄 Обновить" (Refresh) button under an answer: read the page again, skip the cache."""
 
 import logging
 

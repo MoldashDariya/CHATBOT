@@ -64,7 +64,7 @@ A repeated link is answered from a local SQLite file (`CACHE_DB_PATH`, `data/cac
 default, not committed to git) without calling the model. The "🔄 Обновить" ("Refresh") button
 under a summary reads the page again. Cache lifetime is set by `CACHE_TTL_HOURS` (24 by default;
 `0` disables the cache). Only answers about public pages are stored, with no user data. The file can
-be deleted at any time; the bot will recreate it. Details: the caching section ("Кэширование") of
+be deleted at any time; the bot will recreate it. Details: the "Caching" section of
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Development
